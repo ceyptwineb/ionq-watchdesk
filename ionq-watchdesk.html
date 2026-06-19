@@ -1589,24 +1589,22 @@
       if (item.kind === "SEC開示") return makeSecDraft(item, prefix, memo);
 
       const view = catalystView(item);
+      const check = memo ? memo.split("\n").filter(Boolean)[0].replace(/^・/, "") : view.check;
 
-      return `【IONQ${prefix}】
+      return fitPost(`【IONQ${prefix}】
 
-${item.title}
+${shortTitle(item.title)}
 
-何が起きた？
-・${view.what}
+何が起きた: ${view.what}
 
-なぜ重要？
-・${view.why}
+なぜ重要: ${view.why}
 
-確認点:
-・${memo ? memo.split("\n").filter(Boolean)[0].replace(/^・/, "") : view.check}
+確認点: ${check}
 
 出典：
 ${shortSource(item)}
 
-※投資助言ではありません。`;
+※投資助言ではありません。`);
     }
 
     function catalystView(item) {
@@ -1615,79 +1613,76 @@ ${shortSource(item)}
 
       if (/contract|deal|agreement|partnership|customer|提携|契約|採用|導入/.test(text)) {
         return {
-          what: "IonQの技術が研究段階から実利用・商用案件に近づく可能性がある材料。",
-          why: "量子計算が売上、顧客基盤、政府・企業インフラに接続するほど、夢株から事業会社へ見方が変わる。",
-          check: "相手先、契約金額、売上計上時期、継続契約か実証止まりかを確認。"
+          what: "研究段階から実利用・商用案件に近づく材料。",
+          why: "売上や顧客基盤に接続すれば、夢株から事業会社へ見方が変わる。",
+          check: "相手先、契約金額、売上時期、実証か本契約か。"
         };
       }
 
       if (/government|darpa|air force|army|navy|defense|federal|政府|国防|軍|国家|安全保障/.test(text)) {
         return {
-          what: "量子技術が国家安全保障や政府案件に関わる可能性がある材料。",
-          why: "量子は暗号、通信、最適化、シミュレーションに直結し、国策化すると市場評価が一段変わり得る。",
-          check: "政府機関名、予算規模、契約期間、IonQが主契約者か下請けかを確認。"
+          what: "量子技術が政府・国防案件に関わる材料。",
+          why: "暗号、通信、最適化に直結し、国策化で評価軸が変わり得る。",
+          check: "機関名、予算、期間、主契約者か下請けか。"
         };
       }
 
       if (/roadmap|algorithmic qubit|aq|forte|tempo|system|hardware|error|fidelity|技術|ロードマップ|量子ビット|エラー|精度/.test(text)) {
         return {
-          what: "IonQの量子コンピュータ性能やロードマップに関わる材料。",
-          why: "性能進化が本物なら、AI・創薬・材料・金融最適化で古典計算では届かない領域に近づく。",
-          check: "実機実績か目標値か、AQなどの指標、競合との差、商用提供時期を確認。"
+          what: "量子コンピュータ性能やロードマップの材料。",
+          why: "性能進化が本物なら、AI・創薬・材料開発の前提が変わり得る。",
+          check: "実績か目標か、AQ、競合差、商用時期。"
         };
       }
 
       if (/earnings|revenue|guidance|backlog|cash|決算|売上|受注|現金|ガイダンス/.test(text)) {
         return {
-          what: "IonQの期待値を数字で検証する材料。",
-          why: "テーマ株は夢で買われるが、売上・受注・現金残高が伴うかで長期評価が変わる。",
-          check: "売上、受注残、現金残高、赤字幅、株式希薄化、通期見通しを確認。"
+          what: "期待値を数字で検証する材料。",
+          why: "夢だけでなく、売上・受注・現金が伴うかで評価が変わる。",
+          check: "売上、受注残、現金、赤字、希薄化、見通し。"
         };
       }
 
       if (/offering|s-3|424b|dilution|希薄化|増資|売出/.test(text)) {
         return {
-          what: "資金調達や希薄化に関わる可能性がある材料。",
-          why: "研究開発資金は必要だが、株式発行は既存株主の持分を薄めるため短期の重しになりやすい。",
-          check: "発行額、使途、既に発行されたのか登録だけかを確認。"
+          what: "資金調達や希薄化に関わる材料。",
+          why: "研究開発資金は必要だが、株式発行は短期の重しになりやすい。",
+          check: "発行額、使途、発行済みか登録だけか。"
         };
       }
 
       if (item.confidence === "SNS発" || item.kind === "X投稿") {
         return {
-          what: "X上でIONQ関連の反応が出ている材料。",
-          why: "速報の初動はXに出やすいが、誤情報も混ざる。一次情報に戻れるかが勝負。",
-          check: `投稿者、元ソース、IR/SECとの一致を確認。${sourceCaution}`
+          what: "XでIONQ関連の反応が出ている材料。",
+          why: "初動は速いが誤情報も混ざる。一次情報に戻れるかが勝負。",
+          check: `投稿者、元ソース、IR/SEC一致。${sourceCaution}`
         };
       }
 
       return {
-        what: "IonQの事業・技術・市場評価に関わる可能性がある材料。",
-        why: "量子コンピュータはAI、暗号、創薬、材料開発、最適化の前提を変え得るテーマ。小さな発表でも文脈が重要。",
-        check: `一次情報、数字、相手先、時期、売上影響の有無を確認。${sourceCaution}`
+        what: "IonQの事業・技術・市場評価に関わる材料。",
+        why: "量子はAI、暗号、創薬、材料開発、最適化の前提を変え得る。",
+        check: `一次情報、数字、相手先、時期、売上影響。${sourceCaution}`
       };
     }
 
     function makeSecDraft(item, prefix, memo) {
       const brief = secBrief(item);
       const action = secActionLine(item, brief);
-      return `【IONQ SEC速報】
+      return fitPost(`【IONQ SEC速報】
 
 ${brief.headline}
 
-内容:
-・${brief.what}
+内容: ${brief.what}
 
-見方:
-・${action}
+見方: ${action}
 
-確認点:
-・${brief.check}${memo ? `\n${compactBullets(memo, 1)}` : ""}
+確認点: ${brief.check}${memo ? ` / ${memo.split("\n").filter(Boolean)[0].replace(/^・/, "")}` : ""}
 
 出典:
 ${shortSource(item)}
 
-※投資助言ではありません。`;
+※投資助言ではありません。`);
     }
 
     function secActionLine(item, brief) {
@@ -1705,17 +1700,33 @@ ${shortSource(item)}
 
     function shortSource(item) {
       if (item.source === "SEC" || item.kind === "SEC開示") {
-        const accession = item.accessionNumber ? ` / ${item.accessionNumber}` : "";
-        return `SEC EDGAR${accession}\nhttps://www.sec.gov/edgar/browse/?CIK=1824920`;
+        return item.accessionNumber ? `SEC EDGAR / ${item.accessionNumber}` : "SEC EDGAR";
       }
 
       if (item.source && item.source !== "Google News" && item.url && item.url.length <= 120) {
-        return `${item.source}\n${item.url}`;
+        return item.source;
       }
 
-      if (item.url && item.url.length <= 120) return item.url;
+      if (item.url && item.url.length <= 120) return "公式/出典URL";
 
-      return `${item.source || "出典"} / URLは本文で確認`;
+      return item.source || "出典は本文リンクで確認";
+    }
+
+    function shortTitle(title) {
+      const clean = String(title || "IONQ関連ニュース")
+        .replace(/\s+-\s+[^-]+$/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+      return clean.length > 42 ? `${clean.slice(0, 41)}…` : clean;
+    }
+
+    function fitPost(text, max = 270) {
+      if (text.length <= max) return text;
+      return text
+        .replace(/\n※投資助言ではありません。/, "")
+        .replace(/確認点: .+/, "確認点: 数字・相手先・時期を確認。")
+        .slice(0, max - 1)
+        .trimEnd() + "…";
     }
 
     function compactBullets(text, limit) {
@@ -1874,23 +1885,20 @@ ${shortSource(item)}
 
       const view = catalystView(item);
 
-      return `【IONQ速報】
+      return fitPost(`【IONQ速報】
 
-${item.title}
+${shortTitle(item.title)}
 
-何が起きた？
-・${view.what}
+何が起きた: ${view.what}
 
-なぜ重要？
-・${view.why}
+なぜ重要: ${view.why}
 
-確認点:
-・${view.check}
+確認点: ${view.check}
 
 出典：
 ${shortSource(item)}
 
-※投資助言ではありません。`;
+※投資助言ではありません。`);
     }
 
     function renderHistory() {

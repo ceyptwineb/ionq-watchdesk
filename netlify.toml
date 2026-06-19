@@ -5,7 +5,7 @@
   directory = "netlify/functions"
 
 [functions."watch-ionq"]
-  schedule = "*/15 * * * *"
+  schedule = "* * * * *"
 
 [[headers]]
   for = "/*"

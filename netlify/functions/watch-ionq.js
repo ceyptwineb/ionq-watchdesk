@@ -3,7 +3,7 @@ const crypto = require("node:crypto");
 const SEC_CIK = "0001824920";
 const STORE_NAME = "ionq-watchdesk";
 const STATE_KEY = "watch-state";
-const DEFAULT_LOOKBACK_MINUTES = 18;
+const DEFAULT_LOOKBACK_MINUTES = 3;
 
 exports.handler = async () => {
   const startedAt = new Date().toISOString();
