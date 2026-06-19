@@ -259,15 +259,24 @@ async function readState() {
     const value = await store.get(STATE_KEY);
     return value ? JSON.parse(value) : {};
   } catch (error) {
-    console.warn("Could not read state", error.message);
-    return {};
+    console.warn("Could not read state. Continuing without persistent dedupe.", error.message);
+    return {
+      notifiedIds: [],
+      postedIds: [],
+      storageUnavailable: true
+    };
   }
 }
 
 async function writeState(state) {
-  const { getStore } = await import("@netlify/blobs");
-  const store = getStore(STORE_NAME);
-  await store.set(STATE_KEY, JSON.stringify(state, null, 2));
+  try {
+    if (state.storageUnavailable) return;
+    const { getStore } = await import("@netlify/blobs");
+    const store = getStore(STORE_NAME);
+    await store.set(STATE_KEY, JSON.stringify(state, null, 2));
+  } catch (error) {
+    console.warn("Could not write state. Notification was still processed.", error.message);
+  }
 }
 
 function parseItems(xml) {
