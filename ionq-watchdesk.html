@@ -1096,6 +1096,15 @@
       ["投稿前にURLを残す", "出典なし投稿はしない。一次情報がない場合は未確認扱いにする。"]
     ];
 
+    const FEED_VERSION = "2026-06-19-meaningful-sec-v1";
+
+    if (localStorage.getItem("ionq_feed_version") !== FEED_VERSION) {
+      localStorage.removeItem("ionq_latest");
+      localStorage.removeItem("ionq_notified_ids");
+      localStorage.removeItem("ionq_posted_ids");
+      localStorage.setItem("ionq_feed_version", FEED_VERSION);
+    }
+
     const state = {
       checked: JSON.parse(localStorage.getItem("ionq_checked") || "{}"),
       items: JSON.parse(localStorage.getItem("ionq_items") || "[]"),
@@ -1232,7 +1241,7 @@
       const items = [];
 
       if (data && data.sec) {
-        data.sec.forEach(item => items.push({
+        data.sec.filter(isMeaningfulSec).forEach(item => items.push({
           title: `SEC ${item.form}: ${item.description}`,
           url: item.url,
           source: "SEC",
@@ -1365,9 +1374,17 @@
       ].join("\n");
     }
 
+    function isMeaningfulSec(item) {
+      const form = String(item.form || "").toUpperCase();
+      const text = `${item.description || ""} ${item.title || ""}`.toUpperCase();
+      if (["3", "4", "5", "144"].includes(form)) return false;
+      if (text.includes("OWNERSHIP") || text.includes("FORM 4")) return false;
+      return /8-K|10-Q|10-K|S-3|424B|DEF 14A|PRE 14A|SC 13|13D|13G/.test(form) || /PROSPECTUS|CURRENT REPORT|QUARTERLY|ANNUAL/.test(text);
+    }
+
     function pickLatest(data) {
       const official = data.officialNews && data.officialNews[0];
-      const sec = data.sec && data.sec[0];
+      const sec = data.sec && data.sec.find(isMeaningfulSec);
       const market = data.marketNews && data.marketNews[0];
 
       if (official) {
@@ -1430,7 +1447,7 @@
         : "手動確認モード";
 
       const official = data && data.officialNews && data.officialNews[0];
-      const sec = data && data.sec && data.sec[0];
+      const sec = data && data.sec && data.sec.find(isMeaningfulSec);
       const market = data && data.marketNews && data.marketNews[0];
 
       setLink("latestOfficial", official, "IonQ IR Newsを確認");

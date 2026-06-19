@@ -17,7 +17,7 @@ exports.handler = async () => {
     const fresh = items.filter((item) =>
       !postedIds.has(item.id) &&
       !notifiedIds.has(item.id) &&
-      !isNoisySecOwnership(item) &&
+      !isLowSignalSec(item) &&
       shouldNotifyByTime(item, startedAt)
     );
 
@@ -217,11 +217,12 @@ function withId(item) {
   };
 }
 
-function isNoisySecOwnership(item) {
+function isLowSignalSec(item) {
   if (item.kind !== "SEC開示") return false;
   const form = String(item.form || "").toUpperCase();
   const text = `${item.title || ""} ${item.description || ""}`.toUpperCase();
-  return form === "4" || text.includes("FORM 4") || text.includes("OWNERSHIP");
+  if (["3", "4", "5", "144"].includes(form)) return true;
+  return text.includes("FORM 4") || text.includes("OWNERSHIP");
 }
 
 function shouldNotifyByTime(item, nowValue) {
