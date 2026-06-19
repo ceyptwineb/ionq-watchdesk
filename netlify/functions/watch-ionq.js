@@ -3,6 +3,7 @@ const crypto = require("node:crypto");
 const SEC_CIK = "0001824920";
 const STORE_NAME = "ionq-watchdesk";
 const STATE_KEY = "watch-state";
+const DEFAULT_LOOKBACK_MINUTES = 18;
 
 exports.handler = async () => {
   const startedAt = new Date().toISOString();
@@ -13,7 +14,12 @@ exports.handler = async () => {
     const state = await readState();
     const postedIds = new Set(state.postedIds || []);
     const notifiedIds = new Set(state.notifiedIds || []);
-    const fresh = items.filter((item) => !postedIds.has(item.id) && !notifiedIds.has(item.id));
+    const fresh = items.filter((item) =>
+      !postedIds.has(item.id) &&
+      !notifiedIds.has(item.id) &&
+      !isNoisySecOwnership(item) &&
+      shouldNotifyByTime(item, startedAt)
+    );
 
     if (!fresh.length) {
       await writeState({
@@ -90,6 +96,7 @@ async function getSecFilings() {
       form,
       filingDate: recent.filingDate[index],
       reportDate: recent.reportDate[index] || "",
+      acceptedAt: recent.acceptanceDateTime[index] || "",
       accessionNumber: accession,
       primaryDocument: recent.primaryDocument[index],
       description: recent.primaryDocDescription[index] || recent.form[index],
@@ -161,7 +168,10 @@ function normalizeLatestItems(data) {
     url: item.url,
     source: "SEC",
     kind: "SEC開示",
+    form: item.form,
+    description: item.description,
     publishedAt: item.filingDate,
+    acceptedAt: item.acceptedAt,
     notes: `提出日: ${item.filingDate}\nフォーム: ${item.form}\n内容はSEC本文で確認`
   })));
 
@@ -205,6 +215,42 @@ function withId(item) {
     ...item,
     id: crypto.createHash("sha256").update(`${item.url || ""}|${item.title || ""}`).digest("hex")
   };
+}
+
+function isNoisySecOwnership(item) {
+  if (item.kind !== "SEC開示") return false;
+  const form = String(item.form || "").toUpperCase();
+  const text = `${item.title || ""} ${item.description || ""}`.toUpperCase();
+  return form === "4" || text.includes("FORM 4") || text.includes("OWNERSHIP");
+}
+
+function shouldNotifyByTime(item, nowValue) {
+  if (process.env.NOTIFY_ALL_CURRENT === "true") return true;
+
+  const baseline = process.env.WATCH_BASELINE_AT
+    ? Date.parse(process.env.WATCH_BASELINE_AT)
+    : Date.parse("2026-06-19T15:05:00+09:00");
+  const itemTime = parseItemTime(item);
+
+  if (!itemTime) return false;
+  if (Number.isFinite(baseline) && itemTime <= baseline) return false;
+
+  const now = Date.parse(nowValue);
+  const lookbackMinutes = Number(process.env.WATCH_LOOKBACK_MINUTES || DEFAULT_LOOKBACK_MINUTES);
+  const oldestAllowed = now - lookbackMinutes * 60 * 1000;
+
+  return itemTime >= oldestAllowed && itemTime <= now + 2 * 60 * 1000;
+}
+
+function parseItemTime(item) {
+  const value = item.acceptedAt || item.publishedAt;
+  if (!value) return null;
+
+  const normalized = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)
+    ? value
+    : value;
+  const parsed = Date.parse(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 async function sendNotification(item, count) {

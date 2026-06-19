@@ -50,6 +50,7 @@ async function getSecFilings() {
       form,
       filingDate: recent.filingDate[index],
       reportDate: recent.reportDate[index] || "",
+      acceptedAt: recent.acceptanceDateTime[index] || "",
       accessionNumber: accession,
       primaryDocument: recent.primaryDocument[index],
       description: recent.primaryDocDescription[index] || recent.form[index],

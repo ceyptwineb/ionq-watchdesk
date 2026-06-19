@@ -939,6 +939,7 @@
           <div class="actions">
             <button class="btn" id="copyPost" type="button">コピー</button>
             <button class="btn" id="xSearch" type="button">Xで再確認</button>
+            <button class="btn" id="xHotSearch" type="button">X高反応</button>
             <button class="btn primary" id="openCompose" type="button">X投稿画面を開く</button>
           </div>
         </div>
@@ -1239,7 +1240,9 @@
           impact: /S-3|424B|8-K|10-Q|10-K|4/.test(item.form) ? "要確認" : "中立",
           confidence: "一次情報",
           publishedAt: item.filingDate,
-          notes: `提出日: ${item.filingDate}\nフォーム: ${item.form}\n内容はSEC本文で確認`
+          form: item.form,
+          description: item.description,
+          notes: `${conciseSecNotes(item)}\n提出日: ${item.filingDate}`
         }));
       }
 
@@ -1295,6 +1298,73 @@
       });
     }
 
+    function secBrief(item) {
+      const form = String(item.form || item.title || "").toUpperCase();
+      const description = item.description || "";
+      const doc = `${form} ${description}`.toUpperCase();
+
+      if (form === "4" || doc.includes("FORM 4") || doc.includes("OWNERSHIP")) {
+        return {
+          headline: "役員・大株主の保有株変動",
+          what: "誰かが株式やストックオプションなどの保有状況を届け出た開示。",
+          why: "売買そのものより、誰が・何株・取得か売却かを見る材料。",
+          check: "SEC本文の transaction code、株数、価格、保有残を確認。"
+        };
+      }
+
+      if (form === "8-K") {
+        return {
+          headline: "臨時の重要開示",
+          what: "決算以外で投資家に知らせるべき重要イベントの開示。",
+          why: "契約、資金調達、経営陣、業績見通しなど株価材料になりやすい。",
+          check: "Item番号、契約金額、売上時期、添付資料の有無を確認。"
+        };
+      }
+
+      if (form === "10-Q") {
+        return {
+          headline: "四半期決算",
+          what: "売上、損益、現金残高、受注、リスク要因の四半期更新。",
+          why: "量子株は期待先行になりやすく、現金消費と受注残の確認が重要。",
+          check: "売上、営業損失、現金残高、希薄化、ガイダンスを確認。"
+        };
+      }
+
+      if (form === "10-K") {
+        return {
+          headline: "年次報告書",
+          what: "通期決算、事業リスク、財務状況をまとめた年次開示。",
+          why: "長期ストーリーと実際の数字のズレを確認できる。",
+          check: "売上成長、現金残高、リスク要因、株式数の変化を確認。"
+        };
+      }
+
+      if (form.includes("S-3") || form.includes("424B") || doc.includes("PROSPECTUS")) {
+        return {
+          headline: "増資・売出し関連の可能性",
+          what: "将来の株式発行や売出しに関わる登録・目論見書系の開示。",
+          why: "資金調達は財務面ではプラスでも、希薄化懸念で短期的に売られやすい。",
+          check: "発行上限、売出し主体、使途、実際に発行済みかを確認。"
+        };
+      }
+
+      return {
+        headline: "SEC開示",
+        what: "IonQがSECに提出した公式開示。",
+        why: "一次情報なので、ニュースやSNSより優先して確認する材料。",
+        check: "フォーム種別、日付、本文、添付資料を確認。"
+      };
+    }
+
+    function conciseSecNotes(item) {
+      const brief = secBrief(item);
+      return [
+        `内容: ${brief.headline}`,
+        `意味: ${brief.what}`,
+        `確認: ${brief.check}`
+      ].join("\n");
+    }
+
     function pickLatest(data) {
       const official = data.officialNews && data.officialNews[0];
       const sec = data.sec && data.sec[0];
@@ -1313,6 +1383,10 @@
       }
 
       if (sec) {
+        const secCandidate = {
+          form: sec.form,
+          description: sec.description
+        };
         return {
           title: `IonQ SEC ${sec.form}: ${sec.description}`,
           url: sec.url,
@@ -1320,7 +1394,9 @@
           kind: "SEC開示",
           impact: /S-3|424B|8-K|10-Q|10-K|4/.test(sec.form) ? "要確認" : "中立",
           confidence: "一次情報",
-          notes: `提出日: ${sec.filingDate}\nフォーム: ${sec.form}\n内容はSEC本文で確認`
+          form: sec.form,
+          description: sec.description,
+          notes: `${conciseSecNotes(secCandidate)}\n提出日: ${sec.filingDate}`
         };
       }
 
@@ -1488,27 +1564,57 @@
       const angle = document.getElementById("postAngle") ? document.getElementById("postAngle").value : "速報：何が起きたか";
       const memo = document.getElementById("thinkingMemo") ? document.getElementById("thinkingMemo").value.trim() : "";
       const prefix = angle.split("：")[0];
-      const caution = item.confidence === "一次情報"
-        ? "一次情報ベースで確認。"
-        : "一次情報での照合が必要。";
+      if (item.kind === "SEC開示") return makeSecDraft(item, prefix, memo);
+
+      const caution = item.confidence === "一次情報" ? "一次情報ベース。" : "公式IR/SECで照合が必要。";
 
       return `【IONQ${prefix}】
 
 ${item.title}
 
-要点：
-${item.notes ? item.notes.split("\n").filter(Boolean).map(line => `・${line.replace(/^・/, "")}`).join("\n") : "・詳細確認中"}
+要点:
+${compactBullets(item.notes, 3)}
 
-投稿メモ：
-${memo ? memo.split("\n").filter(Boolean).map(line => `・${line.replace(/^・/, "")}`).join("\n") : "・数字、未公表事項、出典を投稿前に確認"}
-
-見方：
-材料タイプは「${item.kind}」。短期インパクトは「${item.impact}」。${caution}
+見方:
+${memo ? compactBullets(memo, 2) : `・短期インパクトは「${item.impact}」。${caution}`}
 
 出典：
 ${item.url || "URL未入力"}
 
 ※投資助言ではありません。`;
+    }
+
+    function makeSecDraft(item, prefix, memo) {
+      const brief = secBrief(item);
+      return `【IONQ SEC速報】
+
+${item.title}
+
+何が出た？
+・${brief.headline}
+・${brief.what}
+
+なぜ見る？
+・${brief.why}
+
+確認点:
+・${brief.check}${memo ? `\n${compactBullets(memo, 1)}` : ""}
+
+出典:
+${item.url || "URL未入力"}
+
+※投資助言ではありません。`;
+    }
+
+    function compactBullets(text, limit) {
+      const lines = String(text || "")
+        .split("\n")
+        .map(line => line.replace(/^・/, "").trim())
+        .filter(Boolean)
+        .slice(0, limit);
+
+      if (!lines.length) return "・詳細確認中";
+      return lines.map(line => `・${line}`).join("\n");
     }
 
     function sendThinkingToPost() {
@@ -1649,6 +1755,8 @@ ${item.url || "URL未入力"}
     }
 
     function makePost(item) {
+      if (item.kind === "SEC開示") return makeSecDraft(item, "速報", "");
+
       const caution = item.confidence === "未確認" || item.confidence === "SNS発"
         ? "現時点では一次情報の確認が必要です。"
         : "出典を確認した上での要約です。";
@@ -1658,7 +1766,7 @@ ${item.url || "URL未入力"}
 ${item.title}
 
 要点：
-${item.notes ? item.notes.split("\n").filter(Boolean).map(line => `・${line.replace(/^・/, "")}`).join("\n") : "・詳細確認中"}
+${compactBullets(item.notes, 3)}
 
 見方：
 材料タイプは「${item.kind}」。短期インパクトは「${item.impact}」として見ています。${caution}
@@ -1758,6 +1866,13 @@ ${item.url || "URL未入力"}
       const item = state.items[state.selected];
       const query = item ? encodeURIComponent(`(${item.title} OR IONQ OR $IONQ)`) : "IONQ%20OR%20%24IONQ";
       window.open(`https://x.com/search?q=${query}&src=typed_query&f=live`, "_blank", "noreferrer");
+    });
+
+    document.getElementById("xHotSearch").addEventListener("click", () => {
+      const item = state.items[state.selected];
+      const titleTerm = item && item.title ? `"${item.title.replace(/"/g, "")}" OR ` : "";
+      const query = encodeURIComponent(`(${titleTerm}IONQ OR $IONQ) (min_faves:20 OR min_retweets:5) -filter:replies`);
+      window.open(`https://x.com/search?q=${query}&src=typed_query&f=top`, "_blank", "noreferrer");
     });
 
     document.getElementById("refreshLatest").addEventListener("click", refreshLatest);
