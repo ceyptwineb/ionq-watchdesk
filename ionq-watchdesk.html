@@ -1251,6 +1251,7 @@
           publishedAt: item.filingDate,
           form: item.form,
           description: item.description,
+          accessionNumber: item.accessionNumber,
           notes: `${conciseSecNotes(item)}\n提出日: ${item.filingDate}`
         }));
       }
@@ -1264,7 +1265,7 @@
           impact: "要確認",
           confidence: "一次情報",
           publishedAt: item.publishedAt,
-          notes: `公式IR系の最新候補\n公開時刻: ${item.publishedAt || "要確認"}`
+          notes: `公式IR系の最新候補\n商用化・提携・ロードマップへの影響を確認\n公開時刻: ${item.publishedAt || "要確認"}`
         }));
       }
 
@@ -1277,7 +1278,7 @@
           impact: "要確認",
           confidence: "大手報道",
           publishedAt: item.publishedAt,
-          notes: `市場ニュースの最新候補\n公開時刻: ${item.publishedAt || "要確認"}`
+          notes: `市場ニュースの最新候補\n株価反応より先に一次情報と数字を確認\n公開時刻: ${item.publishedAt || "要確認"}`
         }));
       }
 
@@ -1395,7 +1396,7 @@
           kind: "IR・提携",
           impact: "要確認",
           confidence: "一次情報",
-          notes: `公式IR系の最新候補\n公開時刻: ${official.publishedAt || "要確認"}`
+          notes: `公式IR系の最新候補\n商用化・提携・ロードマップへの影響を確認\n公開時刻: ${official.publishedAt || "要確認"}`
         };
       }
 
@@ -1413,6 +1414,7 @@
           confidence: "一次情報",
           form: sec.form,
           description: sec.description,
+          accessionNumber: sec.accessionNumber,
           notes: `${conciseSecNotes(secCandidate)}\n提出日: ${sec.filingDate}`
         };
       }
@@ -1425,7 +1427,7 @@
           kind: "株価材料",
           impact: "要確認",
           confidence: "大手報道",
-          notes: `市場ニュースの最新候補\n公開時刻: ${market.publishedAt || "要確認"}`
+          notes: `市場ニュースの最新候補\n株価反応より先に一次情報と数字を確認\n公開時刻: ${market.publishedAt || "要確認"}`
         };
       }
 
@@ -1556,6 +1558,9 @@
         impact: item.impact,
         confidence: item.confidence,
         notes: item.notes,
+        form: item.form,
+        description: item.description,
+        accessionNumber: item.accessionNumber,
         createdAt: new Date().toISOString()
       });
       state.selected = 0;
@@ -1583,44 +1588,134 @@
       const prefix = angle.split("：")[0];
       if (item.kind === "SEC開示") return makeSecDraft(item, prefix, memo);
 
-      const caution = item.confidence === "一次情報" ? "一次情報ベース。" : "公式IR/SECで照合が必要。";
+      const view = catalystView(item);
 
       return `【IONQ${prefix}】
 
 ${item.title}
 
-要点:
-${compactBullets(item.notes, 3)}
+何が起きた？
+・${view.what}
 
-見方:
-${memo ? compactBullets(memo, 2) : `・短期インパクトは「${item.impact}」。${caution}`}
+なぜ重要？
+・${view.why}
+
+確認点:
+・${memo ? memo.split("\n").filter(Boolean)[0].replace(/^・/, "") : view.check}
 
 出典：
-${item.url || "URL未入力"}
+${shortSource(item)}
 
 ※投資助言ではありません。`;
     }
 
+    function catalystView(item) {
+      const text = `${item.title || ""} ${item.notes || ""} ${item.kind || ""}`.toLowerCase();
+      const sourceCaution = item.confidence === "一次情報" ? "" : "公式IR/SECで照合。";
+
+      if (/contract|deal|agreement|partnership|customer|提携|契約|採用|導入/.test(text)) {
+        return {
+          what: "IonQの技術が研究段階から実利用・商用案件に近づく可能性がある材料。",
+          why: "量子計算が売上、顧客基盤、政府・企業インフラに接続するほど、夢株から事業会社へ見方が変わる。",
+          check: "相手先、契約金額、売上計上時期、継続契約か実証止まりかを確認。"
+        };
+      }
+
+      if (/government|darpa|air force|army|navy|defense|federal|政府|国防|軍|国家|安全保障/.test(text)) {
+        return {
+          what: "量子技術が国家安全保障や政府案件に関わる可能性がある材料。",
+          why: "量子は暗号、通信、最適化、シミュレーションに直結し、国策化すると市場評価が一段変わり得る。",
+          check: "政府機関名、予算規模、契約期間、IonQが主契約者か下請けかを確認。"
+        };
+      }
+
+      if (/roadmap|algorithmic qubit|aq|forte|tempo|system|hardware|error|fidelity|技術|ロードマップ|量子ビット|エラー|精度/.test(text)) {
+        return {
+          what: "IonQの量子コンピュータ性能やロードマップに関わる材料。",
+          why: "性能進化が本物なら、AI・創薬・材料・金融最適化で古典計算では届かない領域に近づく。",
+          check: "実機実績か目標値か、AQなどの指標、競合との差、商用提供時期を確認。"
+        };
+      }
+
+      if (/earnings|revenue|guidance|backlog|cash|決算|売上|受注|現金|ガイダンス/.test(text)) {
+        return {
+          what: "IonQの期待値を数字で検証する材料。",
+          why: "テーマ株は夢で買われるが、売上・受注・現金残高が伴うかで長期評価が変わる。",
+          check: "売上、受注残、現金残高、赤字幅、株式希薄化、通期見通しを確認。"
+        };
+      }
+
+      if (/offering|s-3|424b|dilution|希薄化|増資|売出/.test(text)) {
+        return {
+          what: "資金調達や希薄化に関わる可能性がある材料。",
+          why: "研究開発資金は必要だが、株式発行は既存株主の持分を薄めるため短期の重しになりやすい。",
+          check: "発行額、使途、既に発行されたのか登録だけかを確認。"
+        };
+      }
+
+      if (item.confidence === "SNS発" || item.kind === "X投稿") {
+        return {
+          what: "X上でIONQ関連の反応が出ている材料。",
+          why: "速報の初動はXに出やすいが、誤情報も混ざる。一次情報に戻れるかが勝負。",
+          check: `投稿者、元ソース、IR/SECとの一致を確認。${sourceCaution}`
+        };
+      }
+
+      return {
+        what: "IonQの事業・技術・市場評価に関わる可能性がある材料。",
+        why: "量子コンピュータはAI、暗号、創薬、材料開発、最適化の前提を変え得るテーマ。小さな発表でも文脈が重要。",
+        check: `一次情報、数字、相手先、時期、売上影響の有無を確認。${sourceCaution}`
+      };
+    }
+
     function makeSecDraft(item, prefix, memo) {
       const brief = secBrief(item);
+      const action = secActionLine(item, brief);
       return `【IONQ SEC速報】
 
-${item.title}
+${brief.headline}
 
-何が出た？
-・${brief.headline}
+内容:
 ・${brief.what}
 
-なぜ見る？
-・${brief.why}
+見方:
+・${action}
 
 確認点:
 ・${brief.check}${memo ? `\n${compactBullets(memo, 1)}` : ""}
 
 出典:
-${item.url || "URL未入力"}
+${shortSource(item)}
 
 ※投資助言ではありません。`;
+    }
+
+    function secActionLine(item, brief) {
+      const form = String(item.form || "").toUpperCase();
+      const text = `${item.title || ""} ${item.description || ""}`.toUpperCase();
+
+      if (form === "8-K") return "短期材料になりやすい。契約・資金調達・経営変更・ガイダンスのどれかを本文で確認。";
+      if (form === "10-Q") return "数字確認の本丸。売上、現金残高、赤字幅、受注残、希薄化を前回比で見る。";
+      if (form === "10-K") return "長期ストーリーの棚卸し。成長率、資金余力、リスク要因の変化を見る。";
+      if (form.includes("S-3") || form.includes("424B") || text.includes("PROSPECTUS")) return "資金調達・希薄化の可能性。実際に発行済みか、登録だけかを分けて見る。";
+      if (form.includes("13D") || form.includes("13G") || text.includes("SC 13")) return "大口保有の変化。誰がどれだけ持ったか、買い増しか売却かを見る。";
+
+      return brief.why;
+    }
+
+    function shortSource(item) {
+      if (item.source === "SEC" || item.kind === "SEC開示") {
+        const accession = item.accessionNumber ? ` / ${item.accessionNumber}` : "";
+        return `SEC EDGAR${accession}\nhttps://www.sec.gov/edgar/browse/?CIK=1824920`;
+      }
+
+      if (item.source && item.source !== "Google News" && item.url && item.url.length <= 120) {
+        return `${item.source}\n${item.url}`;
+      }
+
+      if (item.url && item.url.length <= 120) return item.url;
+
+      return `${item.source || "出典"} / URLは本文で確認`;
     }
 
     function compactBullets(text, limit) {
@@ -1645,6 +1740,9 @@ ${item.url || "URL未入力"}
         impact: item.impact,
         confidence: item.confidence,
         notes: document.getElementById("thinkingMemo").value.trim() || item.notes,
+        form: item.form,
+        description: item.description,
+        accessionNumber: item.accessionNumber,
         createdAt: new Date().toISOString()
       });
       state.selected = 0;
@@ -1774,22 +1872,23 @@ ${item.url || "URL未入力"}
     function makePost(item) {
       if (item.kind === "SEC開示") return makeSecDraft(item, "速報", "");
 
-      const caution = item.confidence === "未確認" || item.confidence === "SNS発"
-        ? "現時点では一次情報の確認が必要です。"
-        : "出典を確認した上での要約です。";
+      const view = catalystView(item);
 
       return `【IONQ速報】
 
 ${item.title}
 
-要点：
-${compactBullets(item.notes, 3)}
+何が起きた？
+・${view.what}
 
-見方：
-材料タイプは「${item.kind}」。短期インパクトは「${item.impact}」として見ています。${caution}
+なぜ重要？
+・${view.why}
+
+確認点:
+・${view.check}
 
 出典：
-${item.url || "URL未入力"}
+${shortSource(item)}
 
 ※投資助言ではありません。`;
     }
