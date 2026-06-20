@@ -3,25 +3,715 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="refresh" content="0; url=./ionq-watchdesk.html">
   <title>IONQ Watchdesk</title>
   <style>
-    body {
-      margin: 0;
-      min-height: 100vh;
-      display: grid;
-      place-items: center;
-      font-family: "Segoe UI", "Noto Sans JP", system-ui, sans-serif;
-      color: #17202a;
-      background: #f6f7fb;
+    :root {
+      --bg: #f4f6f8;
+      --panel: #fff;
+      --ink: #18202a;
+      --muted: #647080;
+      --line: #d9dee6;
+      --blue: #2458c6;
+      --green: #16845b;
+      --red: #bd3d43;
+      --amber: #a56a13;
+      --violet: #7047a8;
+      --dark: #17202b;
     }
 
-    a {
-      color: #2454d6;
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--bg);
+      font-family: "Segoe UI", "Noto Sans JP", system-ui, sans-serif;
+    }
+
+    button, select, textarea { font: inherit; }
+    button { cursor: pointer; }
+    a { color: inherit; }
+
+    .shell {
+      width: min(1440px, 100%);
+      margin: 0 auto;
+      padding: 16px;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      padding: 4px 0 14px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .mark {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      border-radius: 7px;
+      color: #fff;
+      background: var(--dark);
+      font-weight: 800;
+    }
+
+    h1, h2, h3, p { margin: 0; }
+    h1 { font-size: 19px; }
+    h2 { font-size: 16px; }
+    h3 { font-size: 14px; line-height: 1.45; }
+
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 12px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .live {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--green);
+      font-weight: 700;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+    }
+
+    .icon-btn, .btn {
+      min-height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: #fff;
+      color: var(--ink);
+      padding: 7px 11px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+    }
+
+    .btn.primary {
+      color: #fff;
+      border-color: var(--blue);
+      background: var(--blue);
+    }
+
+    .btn.dark {
+      color: #fff;
+      border-color: var(--dark);
+      background: var(--dark);
+    }
+
+    .headline {
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      gap: 12px;
+      padding: 16px 0 10px;
+    }
+
+    .headline p {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 4px;
+    }
+
+    .feeds {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      align-items: start;
+    }
+
+    .lane {
+      min-width: 0;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .lane-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 43px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .lane[data-type="IR"] .lane-head { border-top: 3px solid var(--blue); }
+    .lane[data-type="SEC"] .lane-head { border-top: 3px solid var(--red); }
+    .lane[data-type="NEWS"] .lane-head { border-top: 3px solid var(--amber); }
+    .lane[data-type="X"] .lane-head { border-top: 3px solid var(--violet); }
+
+    .count {
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .lane-list {
+      display: grid;
+      max-height: 440px;
+      overflow: auto;
+    }
+
+    .story {
+      border-bottom: 1px solid #edf0f4;
+      background: #fff;
+      min-height: 96px;
+      display: grid;
+      width: 100%;
+      color: var(--ink);
+    }
+
+    .story:hover, .story.selected { background: #f0f5ff; }
+    .story.posted { opacity: .5; }
+
+    .story-main {
+      appearance: none;
+      border: 0;
+      background: transparent;
+      text-align: left;
+      padding: 11px 12px 7px;
+      display: grid;
+      gap: 6px;
+      width: 100%;
+      color: var(--ink);
+    }
+
+    .story-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .story-title {
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      font-size: 13px;
+      line-height: 1.45;
+      font-weight: 650;
+    }
+
+    .feed-posted {
+      margin: 0 10px 9px auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--muted);
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .feed-posted input { width: 15px; height: 15px; margin: 0; }
+
+    .empty {
+      padding: 18px 12px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .composer {
+      display: grid;
+      grid-template-columns: minmax(280px, .72fr) minmax(0, 1.28fr);
+      gap: 12px;
+      margin-top: 14px;
+    }
+
+    .controls, .draft {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 14px;
+    }
+
+    .controls { display: grid; gap: 12px; align-content: start; }
+
+    label {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+
+    select, textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: #fff;
+      color: var(--ink);
+      padding: 9px 10px;
+    }
+
+    select { min-height: 40px; }
+
+    .selected-story {
+      border-left: 3px solid var(--blue);
+      padding: 9px 10px;
+      background: #f7f9fc;
+      min-height: 74px;
+    }
+
+    .selected-story span {
+      display: block;
+      color: var(--muted);
+      font-size: 11px;
+      margin-top: 4px;
+    }
+
+    .control-actions, .draft-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .draft {
+      color: #f4f7fb;
+      background: var(--dark);
+      border-color: var(--dark);
+      display: grid;
+      gap: 10px;
+    }
+
+    .draft-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .draft-head span { color: #aeb8c5; font-size: 12px; }
+
+    textarea#draftText {
+      min-height: 255px;
+      resize: vertical;
+      color: #f8fafc;
+      border-color: #3a4654;
+      background: #111821;
+      line-height: 1.55;
+    }
+
+    .draft .btn { border-color: #485563; background: #24303d; color: #fff; }
+    .draft .btn.primary { border-color: #4e78e8; background: #315fcf; }
+
+    .posted-check {
+      min-height: 36px;
+      margin: 0;
+      padding: 7px 10px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      border: 1px solid #485563;
+      border-radius: 7px;
+      color: #fff;
+      background: #24303d;
+      cursor: pointer;
+    }
+
+    .posted-check input { width: 17px; height: 17px; margin: 0; }
+
+    .error {
+      display: none;
+      margin-top: 10px;
+      padding: 10px;
+      border: 1px solid #edb6ba;
+      border-radius: 7px;
+      color: #8f272e;
+      background: #fff4f4;
+      font-size: 12px;
+    }
+
+    @media (max-width: 1100px) {
+      .feeds { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 700px) {
+      .shell { padding: 10px; }
+      header, .headline { align-items: flex-start; }
+      header { flex-direction: column; }
+      .status { justify-content: flex-start; }
+      .feeds, .composer { grid-template-columns: 1fr; }
+      .lane-list { max-height: 310px; }
+      textarea#draftText { min-height: 220px; }
     }
   </style>
 </head>
 <body>
-  <p><a href="./ionq-watchdesk.html">IONQ Watchdeskを開く</a></p>
+  <div class="shell">
+    <header>
+      <div class="brand">
+        <div class="mark">IQ</div>
+        <div>
+          <h1>IONQ Watchdesk</h1>
+          <p>速報・一次情報・投稿作成</p>
+        </div>
+      </div>
+      <div class="status">
+        <span class="live"><i class="dot"></i>自動更新中</span>
+        <span id="lastUpdated">未更新</span>
+        <span id="countdown">次回 60秒</span>
+        <button class="icon-btn" id="refreshButton" type="button">更新</button>
+      </div>
+    </header>
+
+    <div class="headline">
+      <div>
+        <h2>最新速報</h2>
+        <p>カードを選ぶと投稿作成欄へ送られます</p>
+      </div>
+    </div>
+
+    <main class="feeds" id="feeds">
+      <section class="lane" data-type="IR">
+        <div class="lane-head"><h2>最新IR</h2><span class="count" id="countIR">0件</span></div>
+        <div class="lane-list" id="feedIR"><div class="empty">取得中...</div></div>
+      </section>
+      <section class="lane" data-type="SEC">
+        <div class="lane-head"><h2>重要SEC</h2><span class="count" id="countSEC">0件</span></div>
+        <div class="lane-list" id="feedSEC"><div class="empty">取得中...</div></div>
+      </section>
+      <section class="lane" data-type="NEWS">
+        <div class="lane-head"><h2>NEWS</h2><span class="count" id="countNEWS">0件</span></div>
+        <div class="lane-list" id="feedNEWS"><div class="empty">取得中...</div></div>
+      </section>
+      <section class="lane" data-type="X">
+        <div class="lane-head"><h2>公式X</h2><span class="count" id="countX">0件</span></div>
+        <div class="lane-list" id="feedX"><div class="empty">取得中...</div></div>
+      </section>
+    </main>
+
+    <div class="error" id="errorBox"></div>
+
+    <section class="composer">
+      <div class="controls">
+        <h2>投稿作成</h2>
+        <div>
+          <label>選択中</label>
+          <div class="selected-story" id="selectedStory">最新情報を取得しています</div>
+        </div>
+        <div class="control-actions">
+          <button class="btn primary" id="generateButton" type="button">投稿案を作成</button>
+          <button class="btn" id="openSourceButton" type="button">出典を開く</button>
+        </div>
+      </div>
+
+      <div class="draft">
+        <div class="draft-head">
+          <h2>投稿案</h2>
+          <span id="charCount">0 / 280</span>
+        </div>
+        <textarea id="draftText" aria-label="投稿案" placeholder="情報を選んで投稿案を作成"></textarea>
+        <div class="draft-actions">
+          <button class="btn" id="copyButton" type="button">コピー</button>
+          <label class="posted-check"><input id="postedCheck" type="checkbox"> 投稿済み</label>
+          <button class="btn primary" id="openXButton" type="button">X投稿画面</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const PUBLIC_API = "https://dynamic-praline-de62f0.netlify.app/.netlify/functions/latest-ionq";
+    const LOCAL_VIEW = location.protocol === "file:" || ["localhost", "127.0.0.1"].includes(location.hostname);
+    const API_URL = LOCAL_VIEW ? PUBLIC_API : "/.netlify/functions/latest-ionq";
+    const REFRESH_SECONDS = 60;
+    const state = {
+      entries: { IR: [], SEC: [], NEWS: [], X: [] },
+      selected: null,
+      seconds: REFRESH_SECONDS,
+      xStatus: "manual",
+      posted: new Set(JSON.parse(localStorage.getItem("ionq_posted_v2") || "[]"))
+    };
+
+    const els = {
+      lastUpdated: document.getElementById("lastUpdated"),
+      countdown: document.getElementById("countdown"),
+      error: document.getElementById("errorBox"),
+      selected: document.getElementById("selectedStory"),
+      draft: document.getElementById("draftText"),
+      charCount: document.getElementById("charCount"),
+      postedCheck: document.getElementById("postedCheck")
+    };
+
+    function importantSec(item) {
+      const form = String(item.form || "").toUpperCase();
+      const description = String(item.description || "").toUpperCase();
+      if (["3", "4", "5", "144"].includes(form)) return false;
+      if (description.includes("OWNERSHIP")) return false;
+      return /8-K|10-Q|10-K|S-3|424B|DEF 14A|PRE 14A|SC 13|13D|13G/.test(form) ||
+        /PROSPECTUS|CURRENT REPORT|QUARTERLY|ANNUAL/.test(description);
+    }
+
+    function itemId(item) {
+      return encodeURIComponent(`${item.type}|${item.url || ""}|${item.title || ""}`).slice(0, 500);
+    }
+
+    function normalize(data) {
+      state.entries.IR = (data.officialNews || []).map(item => ({
+        ...item, type: "IR", confidence: "一次情報候補", source: item.source || "IonQ IR"
+      }));
+
+      state.entries.SEC = (data.sec || []).filter(importantSec).map(item => ({
+        ...item, type: "SEC", title: `${item.form}｜${secLabel(item)}`, source: "SEC EDGAR", confidence: "一次情報",
+        publishedAt: item.acceptedAt || item.filingDate
+      }));
+
+      state.entries.NEWS = (data.marketNews || []).map(item => ({
+        ...item, type: "NEWS", confidence: "報道", source: item.source || "News"
+      }));
+
+      state.entries.X = [];
+      state.xStatus = "manual";
+    }
+
+    function secLabel(item) {
+      const form = String(item.form || "").toUpperCase();
+      if (form === "8-K") return "臨時重要開示";
+      if (form === "10-Q") return "四半期報告書";
+      if (form === "10-K") return "年次報告書";
+      if (form.includes("S-3") || form.includes("424B")) return "資金調達・目論見書";
+      if (form.includes("13D") || form.includes("13G") || form.includes("SC 13")) return "大口保有報告";
+      return item.description || "SEC開示";
+    }
+
+    function renderAll() {
+      ["IR", "SEC", "NEWS", "X"].forEach(type => renderLane(type));
+      if (!state.selected) selectLatest("IR");
+    }
+
+    function renderLane(type) {
+      const list = document.getElementById(`feed${type}`);
+      const entries = state.entries[type].slice(0, 8);
+      document.getElementById(`count${type}`).textContent = type === "X" ? "無料" : `${entries.length}件`;
+
+      if (!entries.length) {
+        const message = type === "X" ? xStatusMessage() : "該当する最新情報はありません";
+        list.innerHTML = `<div class="empty">${message}</div>`;
+        return;
+      }
+
+      list.innerHTML = entries.map(item => {
+        const id = itemId(item);
+        const selected = state.selected && itemId(state.selected) === id;
+        return `<article class="story ${selected ? "selected" : ""} ${state.posted.has(id) ? "posted" : ""}">
+          <button class="story-main" data-entry="${id}" type="button">
+            <span class="story-meta"><span>${escapeHtml(item.source)}</span><span>${formatDate(item.publishedAt || item.filingDate)}</span></span>
+            <span class="story-title">${escapeHtml(item.title)}</span>
+          </button>
+          <label class="feed-posted"><input type="checkbox" data-feed-posted="${id}" ${state.posted.has(id) ? "checked" : ""}> 投稿済み</label>
+        </article>`;
+      }).join("");
+
+      list.querySelectorAll("[data-entry]").forEach(button => {
+        button.addEventListener("click", () => {
+          const item = state.entries[type].find(candidate => itemId(candidate) === button.dataset.entry);
+          if (item) selectItem(item);
+        });
+      });
+
+      list.querySelectorAll("[data-feed-posted]").forEach(checkbox => {
+        checkbox.addEventListener("change", () => {
+          const id = checkbox.dataset.feedPosted;
+          if (checkbox.checked) state.posted.add(id);
+          else state.posted.delete(id);
+          localStorage.setItem("ionq_posted_v2", JSON.stringify([...state.posted]));
+          if (state.selected && itemId(state.selected) === id) els.postedCheck.checked = checkbox.checked;
+          renderLane(type);
+        });
+      });
+    }
+
+    function xStatusMessage() {
+      const listUrl = "https://x.com/i/lists/2068093425489264980";
+      return `<a href="${listUrl}" target="_blank" rel="noreferrer">選定Xリストを開く</a><br><small>無料・X上で確認</small>`;
+    }
+
+    function selectLatest(type) {
+      const item = state.entries[type][0] || ["IR", "SEC", "NEWS", "X"].flatMap(key => state.entries[key])[0];
+      if (item) selectItem(item);
+    }
+
+    function selectItem(item) {
+      state.selected = item;
+      els.selected.innerHTML = `<strong>${escapeHtml(shortTitle(item.title, 90))}</strong><span>${escapeHtml(item.source)} / ${item.confidence}</span>`;
+      els.postedCheck.checked = state.posted.has(itemId(item));
+      ["IR", "SEC", "NEWS", "X"].forEach(renderLane);
+    }
+
+    function generateDraft() {
+      if (!state.selected) return;
+      els.draft.value = buildDraft(state.selected, state.selected.type);
+      updateCount();
+    }
+
+    function buildDraft(item, priority) {
+      const view = analyze(item, priority);
+      const header = `【IONQ速報｜${priority}】`;
+      const title = shortTitle(item.title, 36);
+      const source = shortSource(item);
+      const draft = `${header}\n${title}\n\n要点: ${view.what}\n重要性: ${view.why}\n確認: ${view.check}\n\n出典: ${source}`;
+      return fit280(draft);
+    }
+
+    function analyze(item, priority) {
+      const text = `${item.title || ""} ${item.description || ""}`.toLowerCase();
+
+      if (priority === "SEC") return analyzeSec(item);
+      if (priority === "X") return {
+        what: "選定Xリストに追加したアカウントの発信。",
+        why: "公式・経営陣・関係者の初動を早く捉えられる。",
+        check: "リンク先、数字、正式発表との一致。"
+      };
+      if (/contract|agreement|partnership|提携|契約|採用|導入/.test(text)) return {
+        what: "研究段階から商用・実利用へ近づく材料。",
+        why: "売上や顧客基盤につながれば評価軸が変わる。",
+        check: "相手先、金額、売上時期、実証か本契約か。"
+      };
+      if (/government|darpa|defense|federal|政府|国防|安全保障/.test(text)) return {
+        what: "政府・国防分野への展開に関わる材料。",
+        why: "暗号・通信・最適化の国策化で市場が広がり得る。",
+        check: "機関名、予算、期間、主契約者か。"
+      };
+      if (/roadmap|qubit|fidelity|hardware|技術|量子ビット|精度/.test(text)) return {
+        what: "性能・技術ロードマップに関わる材料。",
+        why: "AI、創薬、材料開発で実用領域へ近づく可能性。",
+        check: "実績か目標か、指標、競合差、提供時期。"
+      };
+      if (/earnings|revenue|guidance|backlog|決算|売上|受注/.test(text)) return {
+        what: "期待値を事業数字で検証する材料。",
+        why: "売上・受注・現金が伴うかで長期評価が変わる。",
+        check: "売上、受注残、現金、赤字、希薄化。"
+      };
+
+      return priority === "IR" ? {
+        what: "IonQが公式発表した事業・技術上の材料。",
+        why: "量子計算の商用化と市場形成への影響を見極める局面。",
+        check: "数字、相手先、時期、実利用への接続。"
+      } : {
+        what: "IONQに関する新しい報道・市場材料。",
+        why: "量子産業の評価変化を示す可能性。",
+        check: "一次情報、数字、発表主体、株価との因果。"
+      };
+    }
+
+    function analyzeSec(item) {
+      const form = String(item.form || "").toUpperCase();
+      if (form === "8-K") return { what: "臨時の重要事項をSECへ開示。", why: "契約・資金調達・経営変更など株価材料の可能性。", check: "Item番号、金額、売上時期、添付資料。" };
+      if (form === "10-Q") return { what: "四半期の事業・財務状況を開示。", why: "期待を売上・受注・資金余力で検証できる。", check: "売上、受注残、現金、赤字、希薄化。" };
+      if (form === "10-K") return { what: "通期の財務・事業リスクを開示。", why: "長期ストーリーと実績の差を確認できる。", check: "成長率、現金、リスク、株式数。" };
+      if (form.includes("S-3") || form.includes("424B")) return { what: "資金調達・売出し関連の開示。", why: "開発資金確保と株式希薄化の両面がある。", check: "発行額、使途、発行済みか登録だけか。" };
+      return { what: "IonQがSECへ重要資料を提出。", why: "ニュースより優先すべき一次情報。", check: "フォーム、本文、数字、添付資料。" };
+    }
+
+    function shortTitle(title, max) {
+      const clean = String(title || "IONQ関連情報").replace(/\s+-\s+[^-]+$/g, "").replace(/\s+/g, " ").trim();
+      return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
+    }
+
+    function shortSource(item) {
+      if (item.type === "SEC") return `SEC ${item.accessionNumber || item.form || "EDGAR"}`;
+      return String(item.source || item.type).replace(/^@/, "@");
+    }
+
+    function fit280(text) {
+      if (text.length <= 275) return text;
+      return text.replace(/\n確認: .+/, "\n確認: 数字・相手先・時期を確認。").slice(0, 274).trimEnd() + "…";
+    }
+
+    function formatDate(value) {
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return value || "";
+      return date.toLocaleString("ja-JP", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+    }
+
+    function escapeHtml(value) {
+      return String(value || "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
+    }
+
+    function updateCount() {
+      const count = els.draft.value.length;
+      els.charCount.textContent = `${count} / 280`;
+      els.charCount.style.color = count > 280 ? "#ff8990" : "#aeb8c5";
+    }
+
+    async function refresh() {
+      document.getElementById("refreshButton").disabled = true;
+      els.error.style.display = "none";
+      try {
+        const response = await fetch(API_URL, { cache: "no-store" });
+        if (!response.ok) throw new Error(`取得失敗 ${response.status}`);
+        const data = await response.json();
+        if (data.error) throw new Error(data.message || data.error);
+        normalize(data);
+        renderAll();
+        els.lastUpdated.textContent = `更新 ${formatDate(data.updatedAt || new Date())}`;
+        state.seconds = REFRESH_SECONDS;
+      } catch (error) {
+        els.error.textContent = `最新情報を取得できません: ${error.message}`;
+        els.error.style.display = "block";
+      } finally {
+        document.getElementById("refreshButton").disabled = false;
+      }
+    }
+
+    document.getElementById("refreshButton").addEventListener("click", refresh);
+    document.getElementById("generateButton").addEventListener("click", generateDraft);
+    els.draft.addEventListener("input", updateCount);
+
+    document.getElementById("openSourceButton").addEventListener("click", () => {
+      if (state.selected?.url) window.open(state.selected.url, "_blank", "noreferrer");
+    });
+
+    document.getElementById("copyButton").addEventListener("click", async () => {
+      await navigator.clipboard.writeText(els.draft.value);
+      document.getElementById("copyButton").textContent = "コピー済み";
+      setTimeout(() => document.getElementById("copyButton").textContent = "コピー", 1000);
+    });
+
+    els.postedCheck.addEventListener("change", () => {
+      if (!state.selected) return;
+      const id = itemId(state.selected);
+      if (els.postedCheck.checked) state.posted.add(id);
+      else state.posted.delete(id);
+      localStorage.setItem("ionq_posted_v2", JSON.stringify([...state.posted]));
+      renderLane(state.selected.type);
+    });
+
+    document.getElementById("openXButton").addEventListener("click", () => {
+      if (!els.draft.value.trim()) generateDraft();
+      window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(els.draft.value)}`, "_blank", "noreferrer");
+    });
+
+    setInterval(() => {
+      state.seconds -= 1;
+      if (state.seconds <= 0) refresh();
+      els.countdown.textContent = `次回 ${Math.max(0, state.seconds)}秒`;
+    }, 1000);
+
+    refresh();
+  </script>
 </body>
 </html>

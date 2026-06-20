@@ -442,7 +442,7 @@
       entries: { IR: [], SEC: [], NEWS: [], X: [] },
       selected: null,
       seconds: REFRESH_SECONDS,
-      xStatus: "unknown",
+      xStatus: "manual",
       posted: new Set(JSON.parse(localStorage.getItem("ionq_posted_v2") || "[]"))
     };
 
@@ -483,10 +483,8 @@
         ...item, type: "NEWS", confidence: "報道", source: item.source || "News"
       }));
 
-      state.entries.X = (data.xPosts || []).map(item => ({
-        ...item, type: "X", confidence: "選定Xリスト", source: item.source || "X"
-      }));
-      state.xStatus = data.xStatus || "unknown";
+      state.entries.X = [];
+      state.xStatus = "manual";
     }
 
     function secLabel(item) {
@@ -507,7 +505,7 @@
     function renderLane(type) {
       const list = document.getElementById(`feed${type}`);
       const entries = state.entries[type].slice(0, 8);
-      document.getElementById(`count${type}`).textContent = `${entries.length}件`;
+      document.getElementById(`count${type}`).textContent = type === "X" ? "無料" : `${entries.length}件`;
 
       if (!entries.length) {
         const message = type === "X" ? xStatusMessage() : "該当する最新情報はありません";
@@ -548,12 +546,7 @@
 
     function xStatusMessage() {
       const listUrl = "https://x.com/i/lists/2068093425489264980";
-      if (state.xStatus === "token_missing") return `X APIトークン未設定<br><a href="${listUrl}" target="_blank" rel="noreferrer">選定Xリストを開く</a>`;
-      if (state.xStatus === "api_401") return "X APIトークンが無効です";
-      if (state.xStatus === "api_403") return "現在のX APIプランでは検索できません";
-      if (state.xStatus === "api_429") return "X APIの取得上限に達しています";
-      if (state.xStatus === "no_recent_posts") return `リストの直近投稿はありません<br><a href="${listUrl}" target="_blank" rel="noreferrer">選定Xリストを開く</a>`;
-      return "X投稿を取得できません";
+      return `<a href="${listUrl}" target="_blank" rel="noreferrer">選定Xリストを開く</a><br><small>無料・X上で確認</small>`;
     }
 
     function selectLatest(type) {

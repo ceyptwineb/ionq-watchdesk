@@ -2,20 +2,17 @@ const SEC_CIK = "0001824920";
 
 exports.handler = async () => {
   try {
-    const [sec, officialNews, marketNews, xResult] = await Promise.all([
+    const [sec, officialNews, marketNews] = await Promise.all([
       getSecFilings(),
       getGoogleNews("site:investors.ionq.com/news/news-details IonQ"),
-      getGoogleNews("IONQ OR $IONQ"),
-      getXPosts()
+      getGoogleNews("IONQ OR $IONQ")
     ]);
 
     const payload = {
       updatedAt: new Date().toISOString(),
       sec,
       officialNews,
-      marketNews,
-      xPosts: xResult.posts,
-      xStatus: xResult.status
+      marketNews
     };
 
     return json(200, payload);
@@ -63,6 +60,13 @@ async function getSecFilings() {
 async function getXPosts() {
   if (!process.env.X_BEARER_TOKEN) return { posts: [], status: "token_missing" };
 
+  const bearerToken = process.env.X_BEARER_TOKEN
+    .trim()
+    .replace(/^['"]|['"]$/g, "")
+    .replace(/^Bearer\s+/i, "")
+    .trim();
+  if (!bearerToken) return { posts: [], status: "token_missing" };
+
   const listId = process.env.X_LIST_ID || "2068093425489264980";
   const params = new URLSearchParams({
     max_results: "25",
@@ -73,7 +77,7 @@ async function getXPosts() {
 
   const response = await fetch(`https://api.x.com/2/lists/${listId}/tweets?${params}`, {
     headers: {
-      "Authorization": `Bearer ${process.env.X_BEARER_TOKEN}`,
+      "Authorization": `Bearer ${bearerToken}`,
       "Accept": "application/json"
     }
   });
