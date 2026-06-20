@@ -416,6 +416,7 @@
       entries: { IR: [], SEC: [], NEWS: [], X: [] },
       selected: null,
       seconds: REFRESH_SECONDS,
+      xStatus: "unknown",
       posted: new Set(JSON.parse(localStorage.getItem("ionq_posted_v2") || "[]"))
     };
 
@@ -459,6 +460,7 @@
       state.entries.X = (data.xPosts || []).map(item => ({
         ...item, type: "X", confidence: "公式・優先アカウント", source: item.source || "X"
       }));
+      state.xStatus = data.xStatus || "unknown";
     }
 
     function secLabel(item) {
@@ -482,7 +484,7 @@
       document.getElementById(`count${type}`).textContent = `${entries.length}件`;
 
       if (!entries.length) {
-        const message = type === "X" ? "X API設定後、公式・経営陣の投稿を表示" : "該当する最新情報はありません";
+        const message = type === "X" ? xStatusMessage() : "該当する最新情報はありません";
         list.innerHTML = `<div class="empty">${message}</div>`;
         return;
       }
@@ -502,6 +504,15 @@
           if (item) selectItem(item);
         });
       });
+    }
+
+    function xStatusMessage() {
+      if (state.xStatus === "token_missing") return `X APIトークン未設定<br><a href="https://x.com/IonQ_Inc" target="_blank" rel="noreferrer">IonQ公式Xを開く</a>`;
+      if (state.xStatus === "api_401") return "X APIトークンが無効です";
+      if (state.xStatus === "api_403") return "現在のX APIプランでは検索できません";
+      if (state.xStatus === "api_429") return "X APIの取得上限に達しています";
+      if (state.xStatus === "no_recent_posts") return `指定アカウントの直近投稿はありません<br><a href="https://x.com/IonQ_Inc" target="_blank" rel="noreferrer">IonQ公式Xを開く</a>`;
+      return "X投稿を取得できません";
     }
 
     function selectLatest(type) {

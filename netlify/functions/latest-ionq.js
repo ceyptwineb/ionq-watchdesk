@@ -2,7 +2,7 @@ const SEC_CIK = "0001824920";
 
 exports.handler = async () => {
   try {
-    const [sec, officialNews, marketNews, xPosts] = await Promise.all([
+    const [sec, officialNews, marketNews, xResult] = await Promise.all([
       getSecFilings(),
       getGoogleNews("site:investors.ionq.com/news/news-details IonQ"),
       getGoogleNews("IONQ OR $IONQ"),
@@ -14,7 +14,8 @@ exports.handler = async () => {
       sec,
       officialNews,
       marketNews,
-      xPosts
+      xPosts: xResult.posts,
+      xStatus: xResult.status
     };
 
     return json(200, payload);
@@ -60,7 +61,7 @@ async function getSecFilings() {
 }
 
 async function getXPosts() {
-  if (!process.env.X_BEARER_TOKEN) return [];
+  if (!process.env.X_BEARER_TOKEN) return { posts: [], status: "token_missing" };
 
   const accounts = getPriorityXAccounts();
   const query = `(${accounts.map((account) => `from:${account}`).join(" OR ")}) -is:retweet`;
@@ -81,13 +82,13 @@ async function getXPosts() {
 
   if (!response.ok) {
     console.warn(`X request failed: ${response.status}`);
-    return [];
+    return { posts: [], status: `api_${response.status}` };
   }
 
   const payload = await response.json();
   const users = new Map((payload.includes && payload.includes.users || []).map((user) => [user.id, user]));
 
-  return (payload.data || []).map((post) => {
+  const posts = (payload.data || []).map((post) => {
     const user = users.get(post.author_id) || {};
     return {
       title: post.text,
@@ -98,6 +99,8 @@ async function getXPosts() {
       metrics: post.public_metrics || {}
     };
   });
+
+  return { posts, status: posts.length ? "ok" : "no_recent_posts" };
 }
 
 function getPriorityXAccounts() {
