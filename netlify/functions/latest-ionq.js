@@ -62,7 +62,8 @@ async function getSecFilings() {
 async function getXPosts() {
   if (!process.env.X_BEARER_TOKEN) return [];
 
-  const query = '(IONQ OR "$IONQ" OR "IonQ") -is:retweet';
+  const accounts = getPriorityXAccounts();
+  const query = `(${accounts.map((account) => `from:${account}`).join(" OR ")}) -is:retweet`;
   const params = new URLSearchParams({
     query,
     max_results: "10",
@@ -92,10 +93,19 @@ async function getXPosts() {
       title: post.text,
       url: user.username ? `https://x.com/${user.username}/status/${post.id}` : `https://x.com/i/web/status/${post.id}`,
       source: user.username ? `@${user.username}` : "X",
+      priorityAccount: true,
       publishedAt: post.created_at,
       metrics: post.public_metrics || {}
     };
   });
+}
+
+function getPriorityXAccounts() {
+  return (process.env.X_PRIORITY_ACCOUNTS || "IonQ_Inc")
+    .split(",")
+    .map((account) => account.trim().replace(/^@/, ""))
+    .filter(Boolean)
+    .slice(0, 12);
 }
 
 async function getGoogleNews(query) {
@@ -153,7 +163,8 @@ function json(statusCode, body) {
     statusCode,
     headers: {
       "content-type": "application/json; charset=utf-8",
-      "cache-control": "no-store"
+      "cache-control": "no-store",
+      "access-control-allow-origin": "*"
     },
     body: JSON.stringify(body)
   };

@@ -123,7 +123,8 @@ async function getGoogleNews(query) {
 async function getXPosts() {
   if (!process.env.X_BEARER_TOKEN) return [];
 
-  const query = '(IONQ OR "$IONQ" OR "IonQ") -is:retweet';
+  const accounts = getPriorityXAccounts();
+  const query = `(${accounts.map((account) => `from:${account}`).join(" OR ")}) -is:retweet`;
   const params = new URLSearchParams({
     query,
     max_results: "10",
@@ -154,10 +155,19 @@ async function getXPosts() {
       url: user.username ? `https://x.com/${user.username}/status/${post.id}` : `https://x.com/i/web/status/${post.id}`,
       source: user.username ? `@${user.username}` : "X",
       kind: "X投稿",
+      priorityAccount: true,
       publishedAt: post.created_at,
       metrics: post.public_metrics || {}
     };
   });
+}
+
+function getPriorityXAccounts() {
+  return (process.env.X_PRIORITY_ACCOUNTS || "IonQ_Inc")
+    .split(",")
+    .map((account) => account.trim().replace(/^@/, ""))
+    .filter(Boolean)
+    .slice(0, 12);
 }
 
 function normalizeLatestItems(data) {
