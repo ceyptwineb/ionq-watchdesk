@@ -123,17 +123,15 @@ async function getGoogleNews(query) {
 async function getXPosts() {
   if (!process.env.X_BEARER_TOKEN) return [];
 
-  const accounts = getPriorityXAccounts();
-  const query = `(${accounts.map((account) => `from:${account}`).join(" OR ")}) -is:retweet`;
+  const listId = process.env.X_LIST_ID || "2068093425489264980";
   const params = new URLSearchParams({
-    query,
-    max_results: "10",
+    max_results: "25",
     "tweet.fields": "created_at,public_metrics,author_id,lang",
     expansions: "author_id",
     "user.fields": "username,name,verified"
   });
 
-  const response = await fetch(`https://api.x.com/2/tweets/search/recent?${params}`, {
+  const response = await fetch(`https://api.x.com/2/lists/${listId}/tweets?${params}`, {
     headers: {
       "Authorization": `Bearer ${process.env.X_BEARER_TOKEN}`,
       "Accept": "application/json"
@@ -155,19 +153,11 @@ async function getXPosts() {
       url: user.username ? `https://x.com/${user.username}/status/${post.id}` : `https://x.com/i/web/status/${post.id}`,
       source: user.username ? `@${user.username}` : "X",
       kind: "X投稿",
-      priorityAccount: true,
+      curatedList: true,
       publishedAt: post.created_at,
       metrics: post.public_metrics || {}
     };
   });
-}
-
-function getPriorityXAccounts() {
-  return (process.env.X_PRIORITY_ACCOUNTS || "IonQ_Inc")
-    .split(",")
-    .map((account) => account.trim().replace(/^@/, ""))
-    .filter(Boolean)
-    .slice(0, 12);
 }
 
 function normalizeLatestItems(data) {

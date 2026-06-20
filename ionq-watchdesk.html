@@ -174,21 +174,28 @@
     }
 
     .story {
-      appearance: none;
-      border: 0;
       border-bottom: 1px solid #edf0f4;
       background: #fff;
-      text-align: left;
-      padding: 11px 12px;
       min-height: 96px;
       display: grid;
-      gap: 6px;
       width: 100%;
       color: var(--ink);
     }
 
     .story:hover, .story.selected { background: #f0f5ff; }
     .story.posted { opacity: .5; }
+
+    .story-main {
+      appearance: none;
+      border: 0;
+      background: transparent;
+      text-align: left;
+      padding: 11px 12px 7px;
+      display: grid;
+      gap: 6px;
+      width: 100%;
+      color: var(--ink);
+    }
 
     .story-meta {
       display: flex;
@@ -207,6 +214,18 @@
       line-height: 1.45;
       font-weight: 650;
     }
+
+    .feed-posted {
+      margin: 0 10px 9px auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--muted);
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .feed-posted input { width: 15px; height: 15px; margin: 0; }
 
     .empty {
       padding: 18px 12px;
@@ -465,7 +484,7 @@
       }));
 
       state.entries.X = (data.xPosts || []).map(item => ({
-        ...item, type: "X", confidence: "公式・優先アカウント", source: item.source || "X"
+        ...item, type: "X", confidence: "選定Xリスト", source: item.source || "X"
       }));
       state.xStatus = data.xStatus || "unknown";
     }
@@ -499,10 +518,13 @@
       list.innerHTML = entries.map(item => {
         const id = itemId(item);
         const selected = state.selected && itemId(state.selected) === id;
-        return `<button class="story ${selected ? "selected" : ""} ${state.posted.has(id) ? "posted" : ""}" data-entry="${id}" type="button">
-          <span class="story-meta"><span>${escapeHtml(item.source)}</span><span>${formatDate(item.publishedAt || item.filingDate)}</span></span>
-          <span class="story-title">${escapeHtml(item.title)}</span>
-        </button>`;
+        return `<article class="story ${selected ? "selected" : ""} ${state.posted.has(id) ? "posted" : ""}">
+          <button class="story-main" data-entry="${id}" type="button">
+            <span class="story-meta"><span>${escapeHtml(item.source)}</span><span>${formatDate(item.publishedAt || item.filingDate)}</span></span>
+            <span class="story-title">${escapeHtml(item.title)}</span>
+          </button>
+          <label class="feed-posted"><input type="checkbox" data-feed-posted="${id}" ${state.posted.has(id) ? "checked" : ""}> 投稿済み</label>
+        </article>`;
       }).join("");
 
       list.querySelectorAll("[data-entry]").forEach(button => {
@@ -511,14 +533,26 @@
           if (item) selectItem(item);
         });
       });
+
+      list.querySelectorAll("[data-feed-posted]").forEach(checkbox => {
+        checkbox.addEventListener("change", () => {
+          const id = checkbox.dataset.feedPosted;
+          if (checkbox.checked) state.posted.add(id);
+          else state.posted.delete(id);
+          localStorage.setItem("ionq_posted_v2", JSON.stringify([...state.posted]));
+          if (state.selected && itemId(state.selected) === id) els.postedCheck.checked = checkbox.checked;
+          renderLane(type);
+        });
+      });
     }
 
     function xStatusMessage() {
-      if (state.xStatus === "token_missing") return `X APIトークン未設定<br><a href="https://x.com/IonQ_Inc" target="_blank" rel="noreferrer">IonQ公式Xを開く</a>`;
+      const listUrl = "https://x.com/i/lists/2068093425489264980";
+      if (state.xStatus === "token_missing") return `X APIトークン未設定<br><a href="${listUrl}" target="_blank" rel="noreferrer">選定Xリストを開く</a>`;
       if (state.xStatus === "api_401") return "X APIトークンが無効です";
       if (state.xStatus === "api_403") return "現在のX APIプランでは検索できません";
       if (state.xStatus === "api_429") return "X APIの取得上限に達しています";
-      if (state.xStatus === "no_recent_posts") return `指定アカウントの直近投稿はありません<br><a href="https://x.com/IonQ_Inc" target="_blank" rel="noreferrer">IonQ公式Xを開く</a>`;
+      if (state.xStatus === "no_recent_posts") return `リストの直近投稿はありません<br><a href="${listUrl}" target="_blank" rel="noreferrer">選定Xリストを開く</a>`;
       return "X投稿を取得できません";
     }
 
@@ -554,8 +588,8 @@
 
       if (priority === "SEC") return analyzeSec(item);
       if (priority === "X") return {
-        what: "IonQ公式・経営陣など優先アカウントの直接発信。",
-        why: "IR前の補足や経営側の狙いが最速で出る可能性。",
+        what: "選定Xリストに追加したアカウントの発信。",
+        why: "公式・経営陣・関係者の初動を早く捉えられる。",
         check: "リンク先、数字、正式発表との一致。"
       };
       if (/contract|agreement|partnership|提携|契約|採用|導入/.test(text)) return {
