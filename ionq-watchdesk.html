@@ -298,6 +298,22 @@
     .draft .btn { border-color: #485563; background: #24303d; color: #fff; }
     .draft .btn.primary { border-color: #4e78e8; background: #315fcf; }
 
+    .posted-check {
+      min-height: 36px;
+      margin: 0;
+      padding: 7px 10px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      border: 1px solid #485563;
+      border-radius: 7px;
+      color: #fff;
+      background: #24303d;
+      cursor: pointer;
+    }
+
+    .posted-check input { width: 17px; height: 17px; margin: 0; }
+
     .error {
       display: none;
       margin-top: 10px;
@@ -374,15 +390,6 @@
       <div class="controls">
         <h2>投稿作成</h2>
         <div>
-          <label for="prioritySelect">重視する情報源</label>
-          <select id="prioritySelect">
-            <option value="IR">IR重視</option>
-            <option value="SEC">SEC重視</option>
-            <option value="NEWS">NEWS重視</option>
-            <option value="X">X重視</option>
-          </select>
-        </div>
-        <div>
           <label>選択中</label>
           <div class="selected-story" id="selectedStory">最新情報を取得しています</div>
         </div>
@@ -400,7 +407,7 @@
         <textarea id="draftText" aria-label="投稿案" placeholder="情報を選んで投稿案を作成"></textarea>
         <div class="draft-actions">
           <button class="btn" id="copyButton" type="button">コピー</button>
-          <button class="btn" id="postedButton" type="button">投稿済みにする</button>
+          <label class="posted-check"><input id="postedCheck" type="checkbox"> 投稿済み</label>
           <button class="btn primary" id="openXButton" type="button">X投稿画面</button>
         </div>
       </div>
@@ -424,10 +431,10 @@
       lastUpdated: document.getElementById("lastUpdated"),
       countdown: document.getElementById("countdown"),
       error: document.getElementById("errorBox"),
-      priority: document.getElementById("prioritySelect"),
       selected: document.getElementById("selectedStory"),
       draft: document.getElementById("draftText"),
-      charCount: document.getElementById("charCount")
+      charCount: document.getElementById("charCount"),
+      postedCheck: document.getElementById("postedCheck")
     };
 
     function importantSec(item) {
@@ -475,7 +482,7 @@
 
     function renderAll() {
       ["IR", "SEC", "NEWS", "X"].forEach(type => renderLane(type));
-      if (!state.selected) selectLatest(els.priority.value);
+      if (!state.selected) selectLatest("IR");
     }
 
     function renderLane(type) {
@@ -522,15 +529,14 @@
 
     function selectItem(item) {
       state.selected = item;
-      els.priority.value = item.type;
       els.selected.innerHTML = `<strong>${escapeHtml(shortTitle(item.title, 90))}</strong><span>${escapeHtml(item.source)} / ${item.confidence}</span>`;
+      els.postedCheck.checked = state.posted.has(itemId(item));
       ["IR", "SEC", "NEWS", "X"].forEach(renderLane);
     }
 
     function generateDraft() {
-      if (!state.selected || state.selected.type !== els.priority.value) selectLatest(els.priority.value);
       if (!state.selected) return;
-      els.draft.value = buildDraft(state.selected, els.priority.value);
+      els.draft.value = buildDraft(state.selected, state.selected.type);
       updateCount();
     }
 
@@ -646,7 +652,6 @@
 
     document.getElementById("refreshButton").addEventListener("click", refresh);
     document.getElementById("generateButton").addEventListener("click", generateDraft);
-    els.priority.addEventListener("change", () => selectLatest(els.priority.value));
     els.draft.addEventListener("input", updateCount);
 
     document.getElementById("openSourceButton").addEventListener("click", () => {
@@ -659,12 +664,13 @@
       setTimeout(() => document.getElementById("copyButton").textContent = "コピー", 1000);
     });
 
-    document.getElementById("postedButton").addEventListener("click", () => {
+    els.postedCheck.addEventListener("change", () => {
       if (!state.selected) return;
-      state.posted.add(itemId(state.selected));
+      const id = itemId(state.selected);
+      if (els.postedCheck.checked) state.posted.add(id);
+      else state.posted.delete(id);
       localStorage.setItem("ionq_posted_v2", JSON.stringify([...state.posted]));
       renderLane(state.selected.type);
-      document.getElementById("postedButton").textContent = "投稿済み";
     });
 
     document.getElementById("openXButton").addEventListener("click", () => {
