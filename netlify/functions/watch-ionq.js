@@ -87,7 +87,7 @@ async function getSecFilings() {
   const recent = data.filings && data.filings.recent ? data.filings.recent : {};
   const forms = recent.form || [];
 
-  return forms.slice(0, 8).map((form, index) => {
+  return forms.slice(0, 50).map((form, index) => {
     const accession = recent.accessionNumber[index];
     const accessionPath = accession.replace(/-/g, "");
     return {
@@ -168,7 +168,7 @@ async function getXPosts() {
 function normalizeLatestItems(data) {
   const items = [];
 
-  data.sec.forEach((item) => items.push(withId({
+  data.sec.filter(isImportantSec).forEach((item) => items.push(withId({
     title: `SEC ${item.form}: ${item.description}`,
     url: item.url,
     source: "SEC",
@@ -228,6 +228,15 @@ function isLowSignalSec(item) {
   const text = `${item.title || ""} ${item.description || ""}`.toUpperCase();
   if (["3", "4", "5", "144"].includes(form)) return true;
   return text.includes("FORM 4") || text.includes("OWNERSHIP");
+}
+
+function isImportantSec(item) {
+  const form = String(item.form || "").toUpperCase();
+  const description = String(item.description || "").toUpperCase();
+  if (["3", "4", "5", "144"].includes(form)) return false;
+  if (description.includes("OWNERSHIP")) return false;
+  return /8-K|10-Q|10-K|S-3|424B|DEF 14A|PRE 14A|SC 13|13D|13G/.test(form) ||
+    /PROSPECTUS|CURRENT REPORT|QUARTERLY|ANNUAL/.test(description);
 }
 
 function shouldNotifyByTime(item, nowValue) {

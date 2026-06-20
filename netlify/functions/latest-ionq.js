@@ -41,7 +41,7 @@ async function getSecFilings() {
   const recent = data.filings && data.filings.recent ? data.filings.recent : {};
   const forms = recent.form || [];
 
-  return forms.slice(0, 8).map((form, index) => {
+  return forms.slice(0, 50).map((form, index) => {
     const accession = recent.accessionNumber[index];
     const accessionPath = accession.replace(/-/g, "");
     return {
