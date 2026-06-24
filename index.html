@@ -611,7 +611,7 @@
         body: "材料そのものと短期的な需給を分け、事業価値を変える事実があるかを見極めたい。",
         watch: "下落率、直接の材料、出来高、一次情報との整合。"
       };
-      if (/stock.*(?:rise|gain|jump|pop|surge)|shares.*(?:rise|gain|jump)|上昇|急騰/.test(text)) return {
+      if (/stock.*(?:rise|gain|jump|pop|surge|soar)|shares.*(?:rise|gain|jump|soar)|上昇|急騰/.test(text)) return {
         label: "株価",
         lead: `${source}がIonQ株の上昇要因を報道。${signalFromTitle(title)}`.trim(),
         body: "期待先行の値動きか、売上や商用化を押し上げる新事実が伴うかが重要。",
