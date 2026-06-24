@@ -421,7 +421,7 @@
       <div class="draft">
         <div class="draft-head">
           <h2>投稿案</h2>
-          <span id="charCount">0 / 200</span>
+          <span id="charCount">X換算 0 / 280</span>
         </div>
         <textarea id="draftText" aria-label="投稿案" placeholder="情報を選んで投稿案を作成"></textarea>
         <div class="draft-actions">
@@ -569,8 +569,31 @@
 
     function buildDraft(item, priority) {
       const view = analyze(item, priority);
-      const draft = `【IONQ｜${view.label}】\n${view.lead}\n\n${view.body}\n注目：${view.watch}\n\n出典：${shortSource(item)}`;
-      return fit200(draft);
+      const sourceUrl = /^https?:\/\//i.test(String(item.url || "")) ? `\n${item.url}` : "";
+      const draft = `【IONQ｜${view.label}】\n${view.lead}\n\n判断：${actionFor(view.label)}\n確認：${view.watch}\n\n出典：${shortSource(item)}${sourceUrl}`;
+      return fitXLimit(draft);
+    }
+
+    function actionFor(label) {
+      const actions = {
+        "投資比較": "記事の結論だけで選ばず、売上成長と企業評価を競合と比較して判断。",
+        "M&A": "買収額と業績への寄与が確認できるまで、強材料と決めつけない。",
+        "提携・契約": "契約額と売上時期が出れば強材料。実証実験だけなら続報待ち。",
+        "業績": "売上・受注・見通しの改善なら強材料。赤字拡大や希薄化なら警戒。",
+        "株価": "値動きだけで追わず、契約・売上など一次情報がなければ短期需給として扱う。",
+        "政府案件": "予算とIonQの受注額が確認できれば注目。採択や参加だけなら続報待ち。",
+        "技術": "目標値ではなく実測性能と提供時期が確認できるまで、評価を急がない。",
+        "市場評価": "目標株価だけで動かず、評価変更の根拠が業績にあるかを確認。",
+        "公式発表": "数字と実施時期が明確なら注目。構想や目標だけなら続報待ち。",
+        "NEWS": "見出しだけで動かず、一次情報と具体的な数字を確認してから判断。",
+        "SEC 8-K": "添付資料を確認。売上につながる契約なら注目し、資金調達なら希薄化を警戒。",
+        "SEC 10-Q": "売上・受注・現金が改善なら注目。赤字拡大や希薄化なら警戒。",
+        "SEC 10-K": "成長実績と資金余力が長期シナリオを支えるか確認して判断。",
+        "資金調達": "資金使途と希薄化率を確認するまで、新株発行を好材料と決めつけない。",
+        "大口保有": "保有比率の増減と目的を確認。単なる定期報告なら過剰反応しない。",
+        "SEC": "見出しでは判断せず、本文と添付資料の数字を確認。"
+      };
+      return actions[label] || actions.NEWS;
     }
 
     function analyze(item, priority) {
@@ -682,14 +705,52 @@
       return shortTitle(String(item.source || item.type).replace(/^@/, "@"), 28);
     }
 
-    function fit200(text) {
-      if (text.length <= 200) return text;
-      const lines = text.split("\n");
-      const source = lines.pop();
-      while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
-      const suffix = `\n\n${source}`;
-      const limit = Math.max(1, 199 - suffix.length);
-      return `${lines.join("\n").slice(0, limit).trimEnd()}…${suffix}`;
+    function charWeight(char) {
+      return /^[\u0000-\u00ff]$/.test(char) ? 1 : 2;
+    }
+
+    function nextWeightedToken(text, index) {
+      const rest = text.slice(index);
+      const url = rest.match(/^https?:\/\/[^\s]+/i);
+      if (url) return { text: url[0], length: url[0].length, weight: 23 };
+      const char = String.fromCodePoint(text.codePointAt(index));
+      return { text: char, length: char.length, weight: charWeight(char) };
+    }
+
+    function weightedLength(text) {
+      let total = 0;
+      for (let index = 0; index < text.length;) {
+        const token = nextWeightedToken(text, index);
+        total += token.weight;
+        index += token.length;
+      }
+      return total;
+    }
+
+    function sliceByWeight(text, maxWeight) {
+      let result = "";
+      let weight = 0;
+      for (let index = 0; index < text.length;) {
+        const token = nextWeightedToken(text, index);
+        if (weight + token.weight > maxWeight) break;
+        result += token.text;
+        weight += token.weight;
+        index += token.length;
+      }
+      return result;
+    }
+
+    function fitXLimit(text) {
+      if (weightedLength(text) <= 280) return text;
+      const sourceMarker = "\n\n出典：";
+      const sourceIndex = text.lastIndexOf(sourceMarker);
+      if (sourceIndex < 0) {
+        return `${sliceByWeight(text, 280 - charWeight("…")).trimEnd()}…`;
+      }
+      const main = text.slice(0, sourceIndex);
+      const suffix = text.slice(sourceIndex);
+      const limit = Math.max(1, 280 - weightedLength(suffix) - charWeight("…"));
+      return `${sliceByWeight(main, limit).trimEnd()}…${suffix}`;
     }
 
     function formatDate(value) {
@@ -703,9 +764,9 @@
     }
 
     function updateCount() {
-      const count = els.draft.value.length;
-      els.charCount.textContent = `${count} / 200`;
-      els.charCount.style.color = count > 200 ? "#ff8990" : "#aeb8c5";
+      const count = weightedLength(els.draft.value);
+      els.charCount.textContent = `X換算 ${count} / 280`;
+      els.charCount.style.color = count > 280 ? "#ff8990" : "#aeb8c5";
     }
 
     async function refresh() {
