@@ -421,7 +421,7 @@
       <div class="draft">
         <div class="draft-head">
           <h2>投稿案</h2>
-          <span id="charCount">0 / 280</span>
+          <span id="charCount">0 / 200</span>
         </div>
         <textarea id="draftText" aria-label="投稿案" placeholder="情報を選んで投稿案を作成"></textarea>
         <div class="draft-actions">
@@ -569,61 +569,107 @@
 
     function buildDraft(item, priority) {
       const view = analyze(item, priority);
-      const header = `【IONQ速報｜${priority}】`;
-      const title = shortTitle(item.title, 36);
-      const source = shortSource(item);
-      const draft = `${header}\n${title}\n\n要点: ${view.what}\n重要性: ${view.why}\n確認: ${view.check}\n\n出典: ${source}`;
-      return fit280(draft);
+      const draft = `【IONQ｜${view.label}】\n${view.lead}\n\n${view.body}\n注目：${view.watch}\n\n出典：${shortSource(item)}`;
+      return fit200(draft);
     }
 
     function analyze(item, priority) {
-      const text = `${item.title || ""} ${item.description || ""}`.toLowerCase();
-
+      const title = cleanTitle(item.title);
+      const text = `${title} ${item.description || ""}`.toLowerCase();
+      const source = shortSource(item);
       if (priority === "SEC") return analyzeSec(item);
-      if (priority === "X") return {
-        what: "選定Xリストに追加したアカウントの発信。",
-        why: "公式・経営陣・関係者の初動を早く捉えられる。",
-        check: "リンク先、数字、正式発表との一致。"
+      const official = priority === "IR";
+      const subject = official ? "IonQが" : `${source}が`;
+
+      if (/should investors choose ionq|better.*stock|ionq.*(?:vs\.?|versus)|(?:vs\.?|versus).*ionq|choose ionq|buy.*ionq|ionq.*buy/.test(text)) return {
+        label: "投資比較",
+        lead: `${source}が、IonQを他の量子関連銘柄より選ぶべきかを比較。`,
+        body: "焦点は技術力や提携実績だけでなく、売上規模、赤字、高い企業評価に見合う成長を示せるか。",
+        watch: "比較対象、評価の前提、記事の最終結論。"
       };
-      if (/contract|agreement|partnership|提携|契約|採用|導入/.test(text)) return {
-        what: "研究段階から商用・実利用へ近づく材料。",
-        why: "売上や顧客基盤につながれば評価軸が変わる。",
-        check: "相手先、金額、売上時期、実証か本契約か。"
+      if (/acquisition|acquire|merger|買収|合併/.test(text)) return {
+        label: "M&A",
+        lead: `${subject}${quoteTitle(title)}を${official ? "発表" : "報道"}。`,
+        body: "技術・人材・顧客基盤の獲得につながる一方、買収額と統合効果が企業価値を左右する。",
+        watch: "買収額、対象技術、完了時期、業績への寄与。"
+      };
+      if (/contract|agreement|partnership|collaboration|提携|契約|採用|導入/.test(text)) return {
+        label: "提携・契約",
+        lead: `${subject}${quoteTitle(title)}を${official ? "発表" : "報道"}。`,
+        body: "研究発表ではなく、顧客・売上・実利用へつながる契約かどうかが評価の分かれ目。",
+        watch: "相手先、契約額、期間、実証か本契約か。"
+      };
+      if (/earnings|revenue|guidance|backlog|results|決算|売上|受注/.test(text)) return {
+        label: "業績",
+        lead: `${subject}${quoteTitle(title)}を${official ? "発表" : "報道"}。`,
+        body: "量子技術への期待を、売上成長・受注残・資金余力という実際の数字で検証する材料。",
+        watch: "売上、受注残、現金、赤字、株式希薄化。"
+      };
+      if (/stock.*(?:fall|drop|down|plunge|slide)|why.*fall|shares.*(?:fall|drop)|下落|急落/.test(text)) return {
+        label: "株価",
+        lead: `${source}がIonQ株の下落要因を報道。${signalFromTitle(title)}`.trim(),
+        body: "材料そのものと短期的な需給を分け、事業価値を変える事実があるかを見極めたい。",
+        watch: "下落率、直接の材料、出来高、一次情報との整合。"
+      };
+      if (/stock.*(?:rise|gain|jump|pop|surge)|shares.*(?:rise|gain|jump)|上昇|急騰/.test(text)) return {
+        label: "株価",
+        lead: `${source}がIonQ株の上昇要因を報道。${signalFromTitle(title)}`.trim(),
+        body: "期待先行の値動きか、売上や商用化を押し上げる新事実が伴うかが重要。",
+        watch: "上昇率、直接の材料、出来高、発表元。"
       };
       if (/government|darpa|defense|federal|政府|国防|安全保障/.test(text)) return {
-        what: "政府・国防分野への展開に関わる材料。",
-        why: "暗号・通信・最適化の国策化で市場が広がり得る。",
-        check: "機関名、予算、期間、主契約者か。"
+        label: "政府案件",
+        lead: `${subject}${quoteTitle(title)}を${official ? "発表" : "報道"}。`,
+        body: "政府・国防需要への接続は信頼性の裏付けになるが、実際の契約規模とIonQの担当範囲が重要。",
+        watch: "機関名、予算、契約期間、主契約者か。"
       };
-      if (/roadmap|qubit|fidelity|hardware|技術|量子ビット|精度/.test(text)) return {
-        what: "性能・技術ロードマップに関わる材料。",
-        why: "AI、創薬、材料開発で実用領域へ近づく可能性。",
-        check: "実績か目標か、指標、競合差、提供時期。"
+      if (/roadmap|qubit|fidelity|hardware|network|技術|量子ビット|精度/.test(text)) return {
+        label: "技術",
+        lead: `${subject}${quoteTitle(title)}を${official ? "発表" : "報道"}。`,
+        body: "性能向上が商用利用へ直結するか、目標ではなく実測値と提供時期で判断したい。",
+        watch: "実績か計画か、性能指標、競合差、提供時期。"
       };
-      if (/earnings|revenue|guidance|backlog|決算|売上|受注/.test(text)) return {
-        what: "期待値を事業数字で検証する材料。",
-        why: "売上・受注・現金が伴うかで長期評価が変わる。",
-        check: "売上、受注残、現金、赤字、希薄化。"
+      if (/analyst|price target|rating|upgrade|downgrade|目標株価|格付け/.test(text)) return {
+        label: "市場評価",
+        lead: `${source}が${quoteTitle(title)}を報道。`,
+        body: "評価変更の根拠が業績見通しの変化なのか、株価水準だけの判断なのかを分けて見る必要がある。",
+        watch: "評価会社、目標株価、変更理由、前提数字。"
       };
 
-      return priority === "IR" ? {
-        what: "IonQが公式発表した事業・技術上の材料。",
-        why: "量子計算の商用化と市場形成への影響を見極める局面。",
-        check: "数字、相手先、時期、実利用への接続。"
-      } : {
-        what: "IONQに関する新しい報道・市場材料。",
-        why: "量子産業の評価変化を示す可能性。",
-        check: "一次情報、数字、発表主体、株価との因果。"
+      return {
+        label: official ? "公式発表" : "NEWS",
+        lead: `${subject}${quoteTitle(title)}を${official ? "発表" : "報道"}。`,
+        body: official
+          ? "IonQ自身の発表として、商用化・売上・技術優位性のどこに影響する内容かを確認したい。"
+          : "見出しだけで判断せず、IonQの売上・競争力・資金面を実際に変える新事実が含まれるかが重要。",
+        watch: official ? "発表主体、具体的な数字、実施時期。" : "一次情報、具体的な数字、記事の結論。"
       };
     }
 
     function analyzeSec(item) {
       const form = String(item.form || "").toUpperCase();
-      if (form === "8-K") return { what: "臨時の重要事項をSECへ開示。", why: "契約・資金調達・経営変更など株価材料の可能性。", check: "Item番号、金額、売上時期、添付資料。" };
-      if (form === "10-Q") return { what: "四半期の事業・財務状況を開示。", why: "期待を売上・受注・資金余力で検証できる。", check: "売上、受注残、現金、赤字、希薄化。" };
-      if (form === "10-K") return { what: "通期の財務・事業リスクを開示。", why: "長期ストーリーと実績の差を確認できる。", check: "成長率、現金、リスク、株式数。" };
-      if (form.includes("S-3") || form.includes("424B")) return { what: "資金調達・売出し関連の開示。", why: "開発資金確保と株式希薄化の両面がある。", check: "発行額、使途、発行済みか登録だけか。" };
-      return { what: "IonQがSECへ重要資料を提出。", why: "ニュースより優先すべき一次情報。", check: "フォーム、本文、数字、添付資料。" };
+      if (form === "8-K") return { label: "SEC 8-K", lead: "IonQが臨時重要報告書8-KをSECへ提出。", body: "契約、資金調達、経営変更など、株価へ直結し得る事実が含まれる一次情報。", watch: "Item番号、金額、発効日、添付資料。" };
+      if (form === "10-Q") return { label: "SEC 10-Q", lead: "IonQが四半期報告書10-QをSECへ提出。", body: "期待ではなく、売上・受注・資金余力から事業の進捗を検証できる重要資料。", watch: "売上、受注残、現金、赤字、希薄化。" };
+      if (form === "10-K") return { label: "SEC 10-K", lead: "IonQが年次報告書10-KをSECへ提出。", body: "通期実績と事業リスクを通じ、長期成長ストーリーと現状の差を確認できる。", watch: "成長率、現金、主要リスク、発行株式数。" };
+      if (form.includes("S-3") || form.includes("424B")) return { label: "資金調達", lead: `IonQが${form}をSECへ提出。`, body: "開発資金の確保につながる一方、新株発行なら既存株主の希薄化要因になる。", watch: "発行額、資金使途、発行済みか登録のみか。" };
+      if (/13D|13G/.test(form)) return { label: "大口保有", lead: `IonQ株に関する${form}がSECへ提出。`, body: "大株主の保有状況や保有目的の変化を示す開示。売買の方向と提出者を確認したい。", watch: "提出者、保有比率、増減、保有目的。" };
+      return { label: "SEC", lead: `IonQが${form || "重要書類"}をSECへ提出。`, body: "報道より優先して確認すべき一次情報。内容と数字を本文で確かめたい。", watch: "フォーム、提出理由、具体的な数字、添付資料。" };
+    }
+
+    function cleanTitle(title) {
+      return String(title || "IONQ関連情報")
+        .replace(/\s+-\s+[^-]+$/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+
+    function quoteTitle(title) {
+      return `「${shortTitle(title, 72)}」`;
+    }
+
+    function signalFromTitle(title) {
+      const percent = title.match(/\b\d+(?:\.\d+)?%/);
+      return percent ? `見出しでは${percent[0]}の値動きに言及。` : "";
     }
 
     function shortTitle(title, max) {
@@ -632,13 +678,18 @@
     }
 
     function shortSource(item) {
-      if (item.type === "SEC") return `SEC ${item.accessionNumber || item.form || "EDGAR"}`;
-      return String(item.source || item.type).replace(/^@/, "@");
+      if (item.type === "SEC") return `SEC EDGAR（${item.form || "提出書類"}）`;
+      return shortTitle(String(item.source || item.type).replace(/^@/, "@"), 28);
     }
 
-    function fit280(text) {
-      if (text.length <= 275) return text;
-      return text.replace(/\n確認: .+/, "\n確認: 数字・相手先・時期を確認。").slice(0, 274).trimEnd() + "…";
+    function fit200(text) {
+      if (text.length <= 200) return text;
+      const lines = text.split("\n");
+      const source = lines.pop();
+      while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+      const suffix = `\n\n${source}`;
+      const limit = Math.max(1, 199 - suffix.length);
+      return `${lines.join("\n").slice(0, limit).trimEnd()}…${suffix}`;
     }
 
     function formatDate(value) {
@@ -653,8 +704,8 @@
 
     function updateCount() {
       const count = els.draft.value.length;
-      els.charCount.textContent = `${count} / 280`;
-      els.charCount.style.color = count > 280 ? "#ff8990" : "#aeb8c5";
+      els.charCount.textContent = `${count} / 200`;
+      els.charCount.style.color = count > 200 ? "#ff8990" : "#aeb8c5";
     }
 
     async function refresh() {
