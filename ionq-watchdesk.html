@@ -433,7 +433,7 @@
         <div class="draft-actions">
           <button class="btn" id="copyButton" type="button">コピー</button>
           <label class="posted-check"><input id="postedCheck" type="checkbox"> 投稿済み</label>
-          <button class="btn primary" id="openXButton" type="button">X投稿画面</button>
+          <button class="btn primary" id="openXButton" type="button">コピーしてX</button>
         </div>
       </div>
     </section>
@@ -583,7 +583,7 @@
       const title = cleanTitle(item.title);
       const reportTitle = titleForReport(item, view);
       const comparison = item.type === "QNEWS" ? `\n\nイオンキューとの比較：\n${comparisonForIonQ(view, title)}` : "";
-      const draft = `${reportTitle}\n${headlineFor(item, view)}\n\n要点：\n${eventLine(item, view, title)}\n\n用語の説明：\n${termExplanation(view, title)}\n\nどれくらい凄い？：\n${whyBig(item, view, title)}\n${comparison}\n\n評価：\n・凄さ：${importanceStars(item, view)}\n・株価影響：${stockStars(item, view)}\n\n結論：\n${conclusionFor(item, view)}\n\n出典：${shortSource(item)}${sourceUrl}`;
+      const draft = `${reportTitle}\n${headlineFor(item, view)}\n\n要点：\n${eventLine(item, view, title)}\n\n用語の説明：\n${termExplanation(view, title)}\n\nどれくらい凄い？：\n${whyBig(item, view, title)}\n${comparison}\n\n評価：\n・凄さ：${importanceStars(item, view)}\n・株価影響：${stockStars(item, view)}\n・関連銘柄：${tickerLine(item, view)}\n\n結論：\n${conclusionFor(item, view)}\n\n出典：${shortSource(item)}${sourceUrl}`;
       return fitXLimit(draft);
     }
 
@@ -740,6 +740,40 @@
       return `${stars(score)} ${score}/5｜${reasons[score]}`;
     }
 
+    function tickerLine(item, view) {
+      const tickers = relatedTickers(item);
+      const tickerText = tickers.join(" / ");
+      if (item.type === "QNEWS") {
+        return `${tickerText}。直接材料と関連銘柄は分けて見る。業界ニュースは株価反応より、市場拡大・競争環境の変化として扱う。`;
+      }
+      if (view.label === "株価") {
+        return `${tickerText}。値動きの理由が一次情報に裏付けられるかを見る。`;
+      }
+      return `${tickerText}。公式IR・SEC・契約材料なら株価カードと一緒に見られやすい。`;
+    }
+
+    function relatedTickers(item) {
+      const text = `${item.title || ""} ${item.description || ""} ${item.source || ""}`.toLowerCase();
+      const pairs = [
+        { ticker: "$IONQ", patterns: [/ionq|ion q|イオンキュー/] },
+        { ticker: "$RGTI", patterns: [/rigetti|リゲッティ/] },
+        { ticker: "$QBTS", patterns: [/d-wave|dwave|d wave|ディーウェーブ/] },
+        { ticker: "$QUBT", patterns: [/quantum computing inc|quantum computing incorporated|\bqubt\b/] },
+        { ticker: "$IBM", patterns: [/\bibm\b/] },
+        { ticker: "$GOOGL", patterns: [/google|alphabet|グーグル/] },
+        { ticker: "$MSFT", patterns: [/microsoft|azure|マイクロソフト/] },
+        { ticker: "$AMZN", patterns: [/amazon|aws|braket|アマゾン/] },
+        { ticker: "$HON", patterns: [/honeywell|quantinuum|ハネウェル/] },
+        { ticker: "$NVDA", patterns: [/nvidia|cuda-q|エヌビディア/] }
+      ];
+      const found = [];
+      pairs.forEach(({ ticker, patterns }) => {
+        if (patterns.some(pattern => pattern.test(text)) && !found.includes(ticker)) found.push(ticker);
+      });
+      if (!found.includes("$IONQ")) found.unshift("$IONQ");
+      return found.slice(0, 5);
+    }
+
     function scoreForImportance(item, view) {
       const title = cleanTitle(item.title).toLowerCase();
       if (item.type === "QNEWS" && /ion trap|trapped ion|ion-trap|イオントラップ/.test(title) && /laser|レーザー/.test(title)) return 4;
@@ -767,7 +801,7 @@
     function comparisonForIonQ(view, title = "") {
       const text = title.toLowerCase();
       if (/ion trap|trapped ion|ion-trap|イオントラップ/.test(text) && /laser|レーザー/.test(text)) {
-        return "IonQもイオントラップ方式を使うため、レーザー制御や光学部品の小型化はかなり近いテーマ。ただしこの記事がIonQの採用や契約を示すわけではない。IonQにとっては、同方式の装置が商用化しやすくなる追い風として見るのが自然。";
+        return "IonQもイオントラップ方式を使うため、レーザー制御や光学部品の小型化はかなり近いテーマ。ただしこの記事がIonQの採用や契約を示すわけではない。$IONQ にとっては、同方式の装置が商用化しやすくなる追い風として見るのが自然。";
       }
       if (view.label === "競合動向") return "競合が性能・顧客・資金力で進むほどIonQの比較対象になる。IonQはイオントラップ方式の精度やクラウド提供、商用契約でどこまで差を出せるかが焦点。";
       if (view.label === "業界資金") return "業界への資金流入はIonQにも追い風。ただし資金が競合に入る場合、IonQは技術優位と売上化の速さで比較される。";
@@ -1045,9 +1079,19 @@
       renderLane(state.selected.type);
     });
 
-    document.getElementById("openXButton").addEventListener("click", () => {
+    document.getElementById("openXButton").addEventListener("click", async () => {
       if (!els.draft.value.trim()) generateDraft();
-      window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(els.draft.value)}`, "_blank", "noreferrer");
+      const button = document.getElementById("openXButton");
+      try {
+        await navigator.clipboard.writeText(els.draft.value);
+        button.textContent = "コピー済み";
+        setTimeout(() => button.textContent = "コピーしてX", 1200);
+      } catch (error) {
+        console.warn("Clipboard copy failed before opening X.", error);
+        button.textContent = "コピー失敗";
+        setTimeout(() => button.textContent = "コピーしてX", 1200);
+      }
+      window.open("https://x.com/compose/post", "_blank", "noreferrer");
     });
 
     setInterval(() => {

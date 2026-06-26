@@ -16,11 +16,11 @@ exports.handler = async (event = {}) => {
         source: "watch-ionq",
         publishedAt: startedAt
       };
-      await sendNotification(testItem, 1);
+      await sendNotification(testItem, 1, { requireTarget: true });
       return json(200, {
         ok: true,
         result: "discord_test_sent",
-        webhookConfigured: Boolean(process.env.DISCORD_WEBHOOK_URL)
+        webhookConfigured: Boolean(getDiscordWebhookUrl())
       });
     }
 
@@ -47,7 +47,7 @@ exports.handler = async (event = {}) => {
         result: "no_new_items",
         checkedAt: startedAt,
         totalItems: items.length,
-        webhookConfigured: Boolean(process.env.DISCORD_WEBHOOK_URL),
+        webhookConfigured: Boolean(getDiscordWebhookUrl()),
         lookbackMinutes: Number(process.env.WATCH_LOOKBACK_MINUTES || DEFAULT_LOOKBACK_MINUTES)
       });
     }
@@ -301,11 +301,11 @@ function parseItemTime(item) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-async function sendNotification(item, count) {
+async function sendNotification(item, count, options = {}) {
   const title = count > 1 ? `IONQ新着 ${count}件` : "IONQ新着";
   const message = `${title}\n${item.title}\n${item.source || ""} ${item.publishedAt || ""}\n${item.url}`;
 
-  if (process.env.DISCORD_WEBHOOK_URL) {
+  if (getDiscordWebhookUrl()) {
     await sendDiscord(item, title);
     return;
   }
@@ -315,11 +315,18 @@ async function sendNotification(item, count) {
     return;
   }
 
+  if (options.requireTarget) {
+    throw new Error("Notification target is not configured. Set DISCORD_WEBHOOK_URL in Netlify environment variables.");
+  }
+
   console.log("No notification target configured. Set DISCORD_WEBHOOK_URL or PUSHOVER_USER_KEY/PUSHOVER_APP_TOKEN.");
 }
 
 async function sendDiscord(item, title) {
-  const response = await fetch(process.env.DISCORD_WEBHOOK_URL, {
+  const webhookUrl = getDiscordWebhookUrl();
+  if (!webhookUrl) throw new Error("DISCORD_WEBHOOK_URL is empty.");
+
+  const response = await fetch(webhookUrl, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -328,6 +335,14 @@ async function sendDiscord(item, title) {
   });
 
   if (!response.ok) throw new Error(`Discord webhook failed: ${response.status}`);
+}
+
+function getDiscordWebhookUrl() {
+  const value = process.env.DISCORD_WEBHOOK_URL || process.env.DISCORD_WEBHOOK || process.env.WEBHOOK_URL || "";
+  return value
+    .trim()
+    .replace(/^['"]|['"]$/g, "")
+    .trim();
 }
 
 async function sendPushover(title, message, url) {
