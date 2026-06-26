@@ -2,17 +2,19 @@ const SEC_CIK = "0001824920";
 
 exports.handler = async () => {
   try {
-    const [sec, officialNews, marketNews] = await Promise.all([
+    const [sec, officialNews, marketNews, quantumNews] = await Promise.all([
       getSecFilings(),
       getGoogleNews("site:investors.ionq.com/news/news-details IonQ"),
-      getGoogleNews("IONQ OR $IONQ")
+      getGoogleNews("IONQ OR $IONQ"),
+      getGoogleNews("\"quantum computing\" OR \"quantum computer\" OR \"quantum technology\" -IONQ -$IONQ")
     ]);
 
     const payload = {
       updatedAt: new Date().toISOString(),
       sec,
       officialNews,
-      marketNews
+      marketNews,
+      quantumNews
     };
 
     return json(200, payload);
