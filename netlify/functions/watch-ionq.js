@@ -1,6 +1,7 @@
 const crypto = require("node:crypto");
 
 const SEC_CIK = "0001824920";
+const COMPETITOR_TICKERS = ["RGTI", "QBTS", "QUBT", "IBM", "GOOGL", "MSFT", "AMZN", "HON", "NVDA"];
 const STORE_NAME = "ionq-watchdesk";
 const STATE_KEY = "watch-state";
 const DEFAULT_LOOKBACK_MINUTES = 180;
@@ -81,11 +82,13 @@ exports.handler = async (event = {}) => {
 };
 
 async function collectLatest() {
-  const [sec, officialNews, marketNews, quantumNews] = await Promise.all([
+  const [sec, officialNews, marketNews, quantumNews, competitorSec, competitorNews] = await Promise.all([
     getSecFilings(),
     getGoogleNews("site:investors.ionq.com/news/news-details IonQ"),
     getGoogleNews("IONQ OR $IONQ"),
-    getGoogleNews("\"quantum computing\" OR \"quantum computer\" OR \"quantum technology\" -IONQ -$IONQ")
+    getGoogleNews("\"quantum computing\" OR \"quantum computer\" OR \"quantum technology\" -IONQ -$IONQ"),
+    getCompetitorSecFilings(),
+    getGoogleNews("(Rigetti OR RGTI OR D-Wave OR QBTS OR \"Quantum Computing Inc\" OR QUBT OR Quantinuum OR \"IBM quantum\" OR \"Google quantum\" OR \"Microsoft quantum\" OR \"AWS Braket\" OR \"NVIDIA quantum\")")
   ]);
 
   return {
@@ -93,19 +96,65 @@ async function collectLatest() {
     sec,
     officialNews,
     marketNews,
-    quantumNews
+    quantumNews,
+    competitorSec,
+    competitorNews
   };
 }
 
 async function getSecFilings() {
-  const response = await fetch(`https://data.sec.gov/submissions/CIK${SEC_CIK}.json`, {
+  return getSecFilingsByCik(SEC_CIK, "IONQ");
+}
+
+async function getCompetitorSecFilings() {
+  let companies;
+  try {
+    companies = await getCompanyTickerMap();
+  } catch (error) {
+    console.warn(`Competitor SEC ticker map failed: ${error.message}`);
+    return [];
+  }
+  const filings = await Promise.all(COMPETITOR_TICKERS.map(async (ticker) => {
+    const company = companies.get(ticker);
+    if (!company) return [];
+    try {
+      return await getSecFilingsByCik(company.cik, ticker, company.name);
+    } catch (error) {
+      console.warn(`Competitor SEC failed for ${ticker}: ${error.message}`);
+      return [];
+    }
+  }));
+  return filings.flat().filter(isImportantSec).slice(0, 24);
+}
+
+async function getCompanyTickerMap() {
+  const response = await fetch("https://www.sec.gov/files/company_tickers.json", {
+    headers: {
+      "User-Agent": process.env.SEC_USER_AGENT || "IONQ Watchdesk contact@example.com",
+      "Accept": "application/json"
+    }
+  });
+  if (!response.ok) throw new Error(`SEC ticker request failed: ${response.status}`);
+  const payload = await response.json();
+  const map = new Map();
+  Object.values(payload).forEach((entry) => {
+    map.set(String(entry.ticker || "").toUpperCase(), {
+      cik: String(entry.cik_str).padStart(10, "0"),
+      name: entry.title || entry.ticker
+    });
+  });
+  return map;
+}
+
+async function getSecFilingsByCik(cik, ticker, companyName = ticker) {
+  const response = await fetch(`https://data.sec.gov/submissions/CIK${cik}.json`, {
     headers: {
       "User-Agent": process.env.SEC_USER_AGENT || "IONQ Watchdesk contact@example.com",
       "Accept": "application/json"
     }
   });
 
-  if (!response.ok) throw new Error(`SEC request failed: ${response.status}`);
+  if (!response.ok) throw new Error(`SEC request failed for ${ticker}: ${response.status}`);
 
   const data = await response.json();
   const recent = data.filings && data.filings.recent ? data.filings.recent : {};
@@ -114,7 +163,10 @@ async function getSecFilings() {
   return forms.slice(0, 50).map((form, index) => {
     const accession = recent.accessionNumber[index];
     const accessionPath = accession.replace(/-/g, "");
+    const cikPath = String(Number(cik));
     return {
+      ticker,
+      companyName,
       form,
       filingDate: recent.filingDate[index],
       reportDate: recent.reportDate[index] || "",
@@ -122,7 +174,7 @@ async function getSecFilings() {
       accessionNumber: accession,
       primaryDocument: recent.primaryDocument[index],
       description: recent.primaryDocDescription[index] || recent.form[index],
-      url: `https://www.sec.gov/Archives/edgar/data/1824920/${accessionPath}/${recent.primaryDocument[index]}`
+      url: `https://www.sec.gov/Archives/edgar/data/${cikPath}/${accessionPath}/${recent.primaryDocument[index]}`
     };
   });
 }
@@ -229,6 +281,27 @@ function normalizeLatestItems(data) {
     kind: "量子業界",
     publishedAt: item.publishedAt,
     notes: `量子業界ニュースの最新候補\n公開時刻: ${item.publishedAt || "要確認"}`
+  })));
+
+  (data.competitorSec || []).forEach((item) => items.push(withId({
+    title: `${item.ticker || "競合"} SEC ${item.form}: ${item.description}`,
+    url: item.url,
+    source: `${item.ticker || "競合"} SEC`,
+    kind: "競合IR/SEC",
+    form: item.form,
+    description: item.description,
+    publishedAt: item.filingDate,
+    acceptedAt: item.acceptedAt,
+    notes: `競合SEC\n企業: ${item.ticker || item.companyName || "競合"}\nフォーム: ${item.form}`
+  })));
+
+  (data.competitorNews || []).forEach((item) => items.push(withId({
+    title: item.title,
+    url: item.url,
+    source: item.source || "Competitor IR",
+    kind: "競合IR/SEC",
+    publishedAt: item.publishedAt,
+    notes: `競合・周辺企業ニュース\n公開時刻: ${item.publishedAt || "要確認"}`
   })));
 
   (data.xPosts || []).forEach((item) => items.push(withId({

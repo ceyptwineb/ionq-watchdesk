@@ -1,12 +1,15 @@
 const SEC_CIK = "0001824920";
+const COMPETITOR_TICKERS = ["RGTI", "QBTS", "QUBT", "IBM", "GOOGL", "MSFT", "AMZN", "HON", "NVDA"];
 
 exports.handler = async () => {
   try {
-    const [sec, officialNews, marketNews, quantumNews] = await Promise.all([
+    const [sec, officialNews, marketNews, quantumNews, competitorSec, competitorNews] = await Promise.all([
       getSecFilings(),
       getGoogleNews("site:investors.ionq.com/news/news-details IonQ"),
       getGoogleNews("IONQ OR $IONQ"),
-      getGoogleNews("\"quantum computing\" OR \"quantum computer\" OR \"quantum technology\" -IONQ -$IONQ")
+      getGoogleNews("\"quantum computing\" OR \"quantum computer\" OR \"quantum technology\" -IONQ -$IONQ"),
+      getCompetitorSecFilings(),
+      getGoogleNews("(Rigetti OR RGTI OR D-Wave OR QBTS OR \"Quantum Computing Inc\" OR QUBT OR Quantinuum OR \"IBM quantum\" OR \"Google quantum\" OR \"Microsoft quantum\" OR \"AWS Braket\" OR \"NVIDIA quantum\")")
     ]);
 
     const payload = {
@@ -14,7 +17,9 @@ exports.handler = async () => {
       sec,
       officialNews,
       marketNews,
-      quantumNews
+      quantumNews,
+      competitorSec,
+      competitorNews
     };
 
     return json(200, payload);
@@ -28,7 +33,51 @@ exports.handler = async () => {
 };
 
 async function getSecFilings() {
-  const response = await fetch(`https://data.sec.gov/submissions/CIK${SEC_CIK}.json`, {
+  return getSecFilingsByCik(SEC_CIK, "IONQ");
+}
+
+async function getCompetitorSecFilings() {
+  let companies;
+  try {
+    companies = await getCompanyTickerMap();
+  } catch (error) {
+    console.warn(`Competitor SEC ticker map failed: ${error.message}`);
+    return [];
+  }
+  const filings = await Promise.all(COMPETITOR_TICKERS.map(async (ticker) => {
+    const company = companies.get(ticker);
+    if (!company) return [];
+    try {
+      return await getSecFilingsByCik(company.cik, ticker, company.name);
+    } catch (error) {
+      console.warn(`Competitor SEC failed for ${ticker}: ${error.message}`);
+      return [];
+    }
+  }));
+  return filings.flat().filter(isImportantSec).slice(0, 24);
+}
+
+async function getCompanyTickerMap() {
+  const response = await fetch("https://www.sec.gov/files/company_tickers.json", {
+    headers: {
+      "User-Agent": "IONQ Watchdesk contact@example.com",
+      "Accept": "application/json"
+    }
+  });
+  if (!response.ok) throw new Error(`SEC ticker request failed: ${response.status}`);
+  const payload = await response.json();
+  const map = new Map();
+  Object.values(payload).forEach((entry) => {
+    map.set(String(entry.ticker || "").toUpperCase(), {
+      cik: String(entry.cik_str).padStart(10, "0"),
+      name: entry.title || entry.ticker
+    });
+  });
+  return map;
+}
+
+async function getSecFilingsByCik(cik, ticker, companyName = ticker) {
+  const response = await fetch(`https://data.sec.gov/submissions/CIK${cik}.json`, {
     headers: {
       "User-Agent": "IONQ Watchdesk contact@example.com",
       "Accept": "application/json"
@@ -36,7 +85,7 @@ async function getSecFilings() {
   });
 
   if (!response.ok) {
-    throw new Error(`SEC request failed: ${response.status}`);
+    throw new Error(`SEC request failed for ${ticker}: ${response.status}`);
   }
 
   const data = await response.json();
@@ -46,7 +95,10 @@ async function getSecFilings() {
   return forms.slice(0, 50).map((form, index) => {
     const accession = recent.accessionNumber[index];
     const accessionPath = accession.replace(/-/g, "");
+    const cikPath = String(Number(cik));
     return {
+      ticker,
+      companyName,
       form,
       filingDate: recent.filingDate[index],
       reportDate: recent.reportDate[index] || "",
@@ -54,9 +106,18 @@ async function getSecFilings() {
       accessionNumber: accession,
       primaryDocument: recent.primaryDocument[index],
       description: recent.primaryDocDescription[index] || recent.form[index],
-      url: `https://www.sec.gov/Archives/edgar/data/1824920/${accessionPath}/${recent.primaryDocument[index]}`
+      url: `https://www.sec.gov/Archives/edgar/data/${cikPath}/${accessionPath}/${recent.primaryDocument[index]}`
     };
   });
+}
+
+function isImportantSec(item) {
+  const form = String(item.form || "").toUpperCase();
+  const description = String(item.description || "").toUpperCase();
+  if (["3", "4", "5", "144"].includes(form)) return false;
+  if (description.includes("OWNERSHIP")) return false;
+  return /8-K|10-Q|10-K|S-3|424B|DEF 14A|PRE 14A|SC 13|13D|13G/.test(form) ||
+    /PROSPECTUS|CURRENT REPORT|QUARTERLY|ANNUAL/.test(description);
 }
 
 async function getXPosts() {

@@ -136,7 +136,7 @@
 
     .feeds {
       display: grid;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
+      grid-template-columns: repeat(6, minmax(0, 1fr));
       gap: 10px;
       align-items: start;
     }
@@ -162,6 +162,7 @@
     .lane[data-type="SEC"] .lane-head { border-top: 3px solid var(--red); }
     .lane[data-type="NEWS"] .lane-head { border-top: 3px solid var(--amber); }
     .lane[data-type="QNEWS"] .lane-head { border-top: 3px solid var(--teal); }
+    .lane[data-type="CIRS"] .lane-head { border-top: 3px solid var(--green); }
     .lane[data-type="X"] .lane-head { border-top: 3px solid var(--violet); }
 
     .count {
@@ -403,6 +404,10 @@
         <div class="lane-head"><h2>量子業界</h2><span class="count" id="countQNEWS">0件</span></div>
         <div class="lane-list" id="feedQNEWS"><div class="empty">取得中...</div></div>
       </section>
+      <section class="lane" data-type="CIRS">
+        <div class="lane-head"><h2>競合IR/SEC</h2><span class="count" id="countCIRS">0件</span></div>
+        <div class="lane-list" id="feedCIRS"><div class="empty">取得中...</div></div>
+      </section>
       <section class="lane" data-type="X">
         <div class="lane-head"><h2>公式X</h2><span class="count" id="countX">0件</span></div>
         <div class="lane-list" id="feedX"><div class="empty">取得中...</div></div>
@@ -445,7 +450,7 @@
     const API_URL = LOCAL_VIEW ? PUBLIC_API : "/.netlify/functions/latest-ionq";
     const REFRESH_SECONDS = 60;
     const state = {
-      entries: { IR: [], SEC: [], NEWS: [], QNEWS: [], X: [] },
+      entries: { IR: [], SEC: [], NEWS: [], QNEWS: [], CIRS: [], X: [] },
       selected: null,
       seconds: REFRESH_SECONDS,
       xStatus: "manual",
@@ -493,6 +498,23 @@
         ...item, type: "QNEWS", confidence: "業界報道", source: item.source || "Quantum News"
       }));
 
+      const competitorSec = (data.competitorSec || []).map(item => ({
+        ...item,
+        type: "CIRS",
+        title: `${item.ticker || "競合"} ${item.form}｜${secLabel(item)}`,
+        source: `${item.ticker || "競合"} SEC`,
+        confidence: "競合一次情報",
+        publishedAt: item.acceptedAt || item.filingDate
+      }));
+      const competitorNews = (data.competitorNews || []).map(item => ({
+        ...item,
+        type: "CIRS",
+        confidence: "競合報道",
+        source: item.source || "Competitor IR"
+      }));
+      state.entries.CIRS = [...competitorSec, ...competitorNews]
+        .sort((a, b) => Date.parse(b.publishedAt || b.filingDate || 0) - Date.parse(a.publishedAt || a.filingDate || 0));
+
       state.entries.X = [];
       state.xStatus = "manual";
     }
@@ -508,7 +530,7 @@
     }
 
     function renderAll() {
-      ["IR", "SEC", "NEWS", "QNEWS", "X"].forEach(type => renderLane(type));
+      ["IR", "SEC", "NEWS", "QNEWS", "CIRS", "X"].forEach(type => renderLane(type));
       if (!state.selected) selectLatest("IR");
     }
 
@@ -560,7 +582,7 @@
     }
 
     function selectLatest(type) {
-      const item = state.entries[type][0] || ["IR", "SEC", "NEWS", "QNEWS", "X"].flatMap(key => state.entries[key])[0];
+      const item = state.entries[type][0] || ["IR", "SEC", "NEWS", "QNEWS", "CIRS", "X"].flatMap(key => state.entries[key])[0];
       if (item) selectItem(item);
     }
 
@@ -568,7 +590,7 @@
       state.selected = item;
       els.selected.innerHTML = `<strong>${escapeHtml(shortTitle(item.title, 90))}</strong><span>${escapeHtml(item.source)} / ${item.confidence}</span>`;
       els.postedCheck.checked = state.posted.has(itemId(item));
-      ["IR", "SEC", "NEWS", "QNEWS", "X"].forEach(renderLane);
+      ["IR", "SEC", "NEWS", "QNEWS", "CIRS", "X"].forEach(renderLane);
     }
 
     function generateDraft() {
@@ -582,14 +604,17 @@
       const sourceUrl = /^https?:\/\//i.test(String(item.url || "")) ? `\n${item.url}` : "";
       const title = cleanTitle(item.title);
       const reportTitle = titleForReport(item, view);
-      const comparison = item.type === "QNEWS" ? `\n\nイオンキューとの比較：\n${comparisonForIonQ(view, title)}` : "";
-      const draft = `${reportTitle}\n${headlineFor(item, view)}\n\n要点：\n${eventLine(item, view, title)}\n\nニュース内容：\n${newsExplanation(item, view, title)}\n\n用語の説明：\n${termExplanation(view, title)}\n\nどれくらい凄い？：\n${whyBig(item, view, title)}\n${comparison}\n\n評価：\n・凄さ：${importanceStars(item, view)}\n・株価影響：${stockStars(item, view)}\n・関連銘柄： ${tickerLine(item, view)}\n\n結論：\n${conclusionFor(item, view)}\n\n出典：${shortSource(item)}${sourceUrl}`;
+      const comparison = ["QNEWS", "CIRS"].includes(item.type) ? `\n\nイオンキューとの比較：\n${comparisonForIonQ(view, title, item)}` : "";
+      const draft = `${reportTitle}\n${headlineFor(item, view)}\n\n要点：\n${eventLine(item, view, title)}\n\nニュース内容：\n${newsExplanation(item, view, title)}\n\n読み解き：\n${termExplanation(view, title)}\n\nどれくらい凄い？：\n${whyBig(item, view, title)}\n${comparison}\n\n評価：\n・凄さ：${importanceStars(item, view)}\n・株価影響：${stockStars(item, view)}\n・関連銘柄： ${tickerLine(item, view)}\n\n結論：\n${conclusionFor(item, view)}\n\n出典：${shortSource(item)}${sourceUrl}`;
       return fitXLimit(draft);
     }
 
     function titleForReport(item, view) {
       if (item.type === "QNEWS") {
         return view.label === "量子業界" ? "【量子業界】" : `【量子業界｜${view.label}】`;
+      }
+      if (item.type === "CIRS") {
+        return view.label === "競合SEC" ? "【競合IR/SEC】" : `【競合IR/SEC｜${view.label}】`;
       }
       return `【IONQ｜${view.label}】`;
     }
@@ -622,7 +647,7 @@
     function headlineFor(item, view) {
       const title = cleanTitle(item.title);
       const text = title.toLowerCase();
-      if (item.type === "QNEWS") {
+      if (item.type === "QNEWS" || item.type === "CIRS") {
         if (/ion trap|trapped ion|ion-trap|イオントラップ/.test(text) && /laser|レーザー/.test(text)) {
           return "イオントラップ量子計算の“心臓部”を小型化する話。地味だが、実用化にはかなり重要。";
         }
@@ -649,6 +674,12 @@
       if (item.type === "QNEWS") {
         return `${source}が「${shortTitle(title, 96)}」を報道。IonQそのものではなく、量子コンピューター産業の部品・技術・政策・競争環境を読むニュース。`;
       }
+      if (item.type === "CIRS" && item.form) {
+        return `${item.ticker || "競合"}が${item.form}をSECへ提出。IonQではなく競合企業の一次情報。`;
+      }
+      if (item.type === "CIRS") {
+        return `${source}が「${shortTitle(title, 96)}」を報道。IonQではなく競合・周辺企業の材料。`;
+      }
       if (item.type === "SEC") return view.lead;
       return view.lead;
     }
@@ -667,6 +698,12 @@
       }
       if (item.type === "QNEWS") {
         return `${source}は、IonQ単体ではなく量子コンピューター業界の技術・政策・競争環境に関するニュースを報じている。IonQへの直接材料か、業界全体の追い風かを分けて読む必要がある。`;
+      }
+      if (item.type === "CIRS" && item.form) {
+        return `${item.ticker || "競合"}のSEC開示。IonQの直接材料ではないが、競合の資金調達、業績、契約、リスク変化はIonQの相対評価に影響する。`;
+      }
+      if (item.type === "CIRS") {
+        return `${source}による競合・周辺企業のニュース。IonQとの比較では、技術、顧客、資金力、商用化スピードのどこに影響するかを見る。`;
       }
       if (item.type === "SEC") return "SECに提出された一次情報。見出しではなく、本文の金額・日付・株式数・添付資料を確認する価値がある。";
       return `${source}によるIonQ関連ニュース。現時点では報道ベースなので、一次情報・具体的な数字・発表主体を確認してから材料性を判断したい。`;
@@ -706,7 +743,7 @@
 
     function whyBig(item, view, title) {
       const text = `${title} ${view.body}`.toLowerCase();
-      if (item.type === "QNEWS" && /ion trap|trapped ion|ion-trap|イオントラップ/.test(text) && /laser|レーザー/.test(text)) {
+      if (["QNEWS", "CIRS"].includes(item.type) && /ion trap|trapped ion|ion-trap|イオントラップ/.test(text) && /laser|レーザー/.test(text)) {
         return "量子コンピューターは本体の性能だけでなく、レーザー、制御装置、冷却、光学部品など周辺技術の完成度で実用性が決まる。小型レーザー増幅器は派手な発表ではないが、装置を研究室から商用機へ近づけるための基盤技術になり得る。";
       }
       if (item.type === "QNEWS" && view.label === "競合動向") {
@@ -716,6 +753,7 @@
         return "資金が入るほど研究開発と人材獲得が進む。業界全体には追い風だが、競合も加速するためIonQだけが得をする話ではない。";
       }
       if (item.type === "QNEWS") return view.body;
+      if (item.type === "CIRS") return "競合企業の材料は、IonQの事業価値を直接変えるわけではない。ただし同じ量子市場で比較されるため、競合の受注、資金調達、技術進展はIonQの見え方を変え得る。";
       return view.body;
     }
 
@@ -820,8 +858,11 @@
       return "★★★★★".slice(0, score) + "☆☆☆☆☆".slice(0, 5 - score);
     }
 
-    function comparisonForIonQ(view, title = "") {
+    function comparisonForIonQ(view, title = "", item = {}) {
       const text = title.toLowerCase();
+      if (item.type === "CIRS") {
+        return "これはIonQの直接材料ではない。ただ、競合の開示やIRは $IONQ の相対評価に関わる。競合が顧客・資金・技術で進めばIonQには比較圧力、量子市場全体が伸びる材料なら追い風。";
+      }
       if (/ion trap|trapped ion|ion-trap|イオントラップ/.test(text) && /laser|レーザー/.test(text)) {
         return "IonQもイオントラップ方式を使うため、レーザー制御や光学部品の小型化はかなり近いテーマ。ただしこの記事がIonQの採用や契約を示すわけではない。$IONQ にとっては、同方式の装置が商用化しやすくなる追い風として見るのが自然。";
       }
@@ -832,6 +873,7 @@
 
     function conclusionFor(item, view) {
       if (item.type === "QNEWS") return "これはIonQの直接材料ではない。ただ、量子コンピューターが実験装置から商用機へ進むための周辺技術ニュースとしては見る価値がある。";
+      if (item.type === "CIRS") return "IonQ本人のニュースではないが、競合の動きは $IONQ の評価に影響する。直接材料と比較材料を分けて扱いたい。";
       if (item.type === "IR") return "公式材料なので優先度は高い。数字、相手先、売上化の時期が見えれば強い。";
       if (item.type === "SEC") return "一次情報なので重要。見出しで終わらせず、金額・株式数・添付資料まで見る価値がある。";
       return "報道ベースなので、株価の話題として使う前に一次情報と具体的な数字を確認したい。";
@@ -843,6 +885,7 @@
       const source = shortSource(item);
       if (priority === "SEC") return analyzeSec(item);
       if (priority === "QNEWS") return analyzeQuantum(item);
+      if (priority === "CIRS") return item.form ? analyzeCompetitorSec(item) : analyzeQuantum(item);
       const official = priority === "IR";
       const subject = official ? "IonQが" : `${source}が`;
 
@@ -943,6 +986,16 @@
         body: "IONQ単体のニュースではないが、業界全体の需要、競争、技術進展を読む材料。IonQの成長シナリオに追い風か逆風かを分けたい。",
         watch: "対象企業、技術方式、商用化時期、数字、IonQとの接点。"
       };
+    }
+
+    function analyzeCompetitorSec(item) {
+      const form = String(item.form || "").toUpperCase();
+      const ticker = item.ticker || "競合";
+      if (form === "8-K") return { label: "競合SEC", lead: `${ticker}が臨時重要開示8-KをSECへ提出。`, body: "競合の契約、資金調達、経営変更などが出る可能性がある一次情報。IonQとの比較材料になる。", watch: "フォーム、金額、契約相手、発効日、添付資料。" };
+      if (form === "10-Q") return { label: "競合SEC", lead: `${ticker}が四半期報告書10-QをSECへ提出。`, body: "競合の売上、現金、赤字、リスクを見られる資料。IonQと事業進捗を比較しやすい。", watch: "売上、現金、赤字、受注、リスク。" };
+      if (form === "10-K") return { label: "競合SEC", lead: `${ticker}が年次報告書10-KをSECへ提出。`, body: "競合の通期実績とリスクを確認できる資料。長期の競争力比較に使える。", watch: "成長率、資金余力、主要リスク、株式数。" };
+      if (form.includes("S-3") || form.includes("424B")) return { label: "競合SEC", lead: `${ticker}が資金調達関連の${form}をSECへ提出。`, body: "競合の資金余力が増える可能性がある一方、希薄化も確認したい材料。", watch: "発行額、資金使途、希薄化、登録のみか発行済みか。" };
+      return { label: "競合SEC", lead: `${ticker}が${form || "SEC書類"}を提出。`, body: "競合企業の一次情報。IonQの直接材料ではないが、比較対象として確認する価値がある。", watch: "提出理由、金額、日付、添付資料。" };
     }
 
     function impactFor(item, view) {
