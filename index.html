@@ -743,13 +743,7 @@
     function tickerLine(item, view) {
       const tickers = relatedTickers(item);
       const tickerText = tickers.join(" / ");
-      if (item.type === "QNEWS") {
-        return `${tickerText}。直接材料と関連銘柄は分けて見る。業界ニュースは株価反応より、市場拡大・競争環境の変化として扱う。`;
-      }
-      if (view.label === "株価") {
-        return `${tickerText}。値動きの理由が一次情報に裏付けられるかを見る。`;
-      }
-      return `${tickerText}。公式IR・SEC・契約材料なら株価カードと一緒に見られやすい。`;
+      return tickerText;
     }
 
     function relatedTickers(item) {
