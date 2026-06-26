@@ -580,9 +580,18 @@
     function buildDraft(item, priority) {
       const view = analyze(item, priority);
       const sourceUrl = /^https?:\/\//i.test(String(item.url || "")) ? `\n${item.url}` : "";
-      const comparison = item.type === "QNEWS" ? `\nイオンキューとの比較：${comparisonForIonQ(view)}` : "";
-      const draft = `【IONQレポート｜${view.label}】\n何が起きた：${view.lead}\n用語メモ：${termNote(view)}\n凄さ：${importanceStars(item, view)}\n株価影響：${stockStars(item, view)}${comparison}\n結論：${conclusionFor(item, view)}\n\n出典：${shortSource(item)}${sourceUrl}`;
+      const title = cleanTitle(item.title);
+      const reportTitle = titleForReport(item, view);
+      const comparison = item.type === "QNEWS" ? `\n\nイオンキューとの比較：\n${comparisonForIonQ(view, title)}` : "";
+      const draft = `${reportTitle}\n${headlineFor(item, view)}\n\n要点：\n${eventLine(item, view, title)}\n\n用語の説明：\n${termExplanation(view, title)}\n\nどれくらい凄い？：\n${whyBig(item, view, title)}\n${comparison}\n\n評価：\n・凄さ：${importanceStars(item, view)}\n・株価影響：${stockStars(item, view)}\n\n結論：\n${conclusionFor(item, view)}\n\n出典：${shortSource(item)}${sourceUrl}`;
       return fitXLimit(draft);
+    }
+
+    function titleForReport(item, view) {
+      if (item.type === "QNEWS") {
+        return view.label === "量子業界" ? "【量子業界】" : `【量子業界｜${view.label}】`;
+      }
+      return `【IONQ｜${view.label}】`;
     }
 
     function actionFor(label) {
@@ -608,6 +617,78 @@
         "SEC": "見出しでは判断せず、本文と添付資料の数字を確認。"
       };
       return actions[label] || actions.NEWS;
+    }
+
+    function headlineFor(item, view) {
+      const title = cleanTitle(item.title);
+      const text = title.toLowerCase();
+      if (item.type === "QNEWS") {
+        if (/ion trap|trapped ion|ion-trap|イオントラップ/.test(text) && /laser|レーザー/.test(text)) {
+          return "イオントラップ量子計算の“心臓部”を小型化する話。地味だが、実用化にはかなり重要。";
+        }
+        if (/ibm|google|microsoft|amazon|aws|rigetti|d-wave|quantinuum|pasqal|quera|atom computing/.test(text)) {
+          return "競合が一歩進めた可能性。IonQを見るなら、相対評価の変化に注意。";
+        }
+        if (/funding|raises|investment|grant|budget|fund|資金|投資|予算/.test(text)) {
+          return "量子分野に資金が流れ込むニュース。市場拡大の温度感を見る材料。";
+        }
+        if (/government|defense|darpa|nist|policy|regulation|政府|国防|政策|規制/.test(text)) {
+          return "量子技術が国家戦略として扱われているサイン。民間企業にも波及し得る。";
+        }
+        return "量子業界の温度感を測るニュース。IonQ単体ではなく、市場全体の流れを見る材料。";
+      }
+      if (view.label === "株価") return "値動きの理由を分解する材料。大事なのは株価より、その裏に事業変化があるか。";
+      if (view.label === "提携・契約") return "商用化に近づく可能性がある材料。相手先と契約額がカギ。";
+      if (view.label === "業績") return "期待ではなく数字でIonQを見る局面。売上、受注、現金が焦点。";
+      if (view.label.startsWith("SEC")) return "一次情報なので重要。見出しではなく本文の数字を見るべき材料。";
+      return "IonQの成長ストーリーに関係する可能性がある材料。数字と相手先を確認したい。";
+    }
+
+    function eventLine(item, view, title) {
+      const source = shortSource(item);
+      if (item.type === "QNEWS") {
+        return `${source}が「${shortTitle(title, 96)}」を報道。IonQそのものではなく、量子コンピューター産業の部品・技術・政策・競争環境を読むニュース。`;
+      }
+      if (item.type === "SEC") return view.lead;
+      return view.lead;
+    }
+
+    function termExplanation(view, title) {
+      const text = `${title} ${view.body}`.toLowerCase();
+      if (/ion trap|trapped ion|ion-trap|イオントラップ/.test(text) && /laser|レーザー/.test(text)) {
+        return "イオントラップ方式は、電場でイオンを閉じ込め、レーザーで量子状態を操作する方式。レーザー増幅器はそのレーザー信号を強く安定させる部品で、小型化できると装置全体を小さく・安定・量産しやすくなる。";
+      }
+      if (/ion trap|trapped ion|ion-trap|イオントラップ/.test(text)) {
+        return "イオントラップ方式は、原子を電気的に閉じ込めて量子ビットとして使う方式。精度の高さが強みだが、装置の複雑さや拡張性が課題になりやすい。";
+      }
+      if (/laser|レーザー/.test(text)) {
+        return "量子コンピューターでレーザーは、量子ビットを操作したり読み出したりするための重要部品。安定性や小型化は実用機の信頼性に直結する。";
+      }
+      if (/qubit|量子ビット/.test(text)) {
+        return "量子ビットは量子コンピューターの基本単位。数が多いだけでなく、誤り率や安定性が実用性を左右する。";
+      }
+      if (/fidelity|精度|error|誤り/.test(text)) {
+        return "精度は計算の正確さを示す重要指標。量子計算は誤りが出やすいため、精度改善は実用化に直結する。";
+      }
+      if (/funding|investment|grant|budget|資金|投資|予算/.test(text)) {
+        return "量子業界は研究開発費が重い分野。資金流入は開発加速の追い風だが、競合の体力も増える。";
+      }
+      return termNote(view);
+    }
+
+    function whyBig(item, view, title) {
+      const text = `${title} ${view.body}`.toLowerCase();
+      if (item.type === "QNEWS" && /ion trap|trapped ion|ion-trap|イオントラップ/.test(text) && /laser|レーザー/.test(text)) {
+        return "量子コンピューターは本体の性能だけでなく、レーザー、制御装置、冷却、光学部品など周辺技術の完成度で実用性が決まる。小型レーザー増幅器は派手な発表ではないが、装置を研究室から商用機へ近づけるための基盤技術になり得る。";
+      }
+      if (item.type === "QNEWS" && view.label === "競合動向") {
+        return "競合の進展はIonQの評価軸を変える。技術性能だけでなく、顧客獲得、クラウド提供、量産性で比較されるため、相対的な強みが見えやすくなる。";
+      }
+      if (item.type === "QNEWS" && view.label === "業界資金") {
+        return "資金が入るほど研究開発と人材獲得が進む。業界全体には追い風だが、競合も加速するためIonQだけが得をする話ではない。";
+      }
+      if (item.type === "QNEWS") return view.body;
+      return view.body;
     }
 
     function termNote(view) {
@@ -660,6 +741,8 @@
     }
 
     function scoreForImportance(item, view) {
+      const title = cleanTitle(item.title).toLowerCase();
+      if (item.type === "QNEWS" && /ion trap|trapped ion|ion-trap|イオントラップ/.test(title) && /laser|レーザー/.test(title)) return 4;
       if (["提携・契約", "業績", "SEC 8-K", "SEC 10-Q", "政府案件"].includes(view.label)) return 4;
       if (["M&A", "技術", "資金調達", "競合動向", "業界資金"].includes(view.label)) return 3;
       if (["公式発表", "SEC 10-K", "量子業界"].includes(view.label)) return 3;
@@ -668,6 +751,8 @@
     }
 
     function scoreForStock(item, view) {
+      const title = cleanTitle(item.title).toLowerCase();
+      if (item.type === "QNEWS" && /ion trap|trapped ion|ion-trap|イオントラップ/.test(title) && /laser|レーザー/.test(title)) return 2;
       if (view.label === "株価") return 4;
       if (["業績", "提携・契約", "SEC 8-K", "資金調達"].includes(view.label)) return 4;
       if (["政府案件", "M&A", "市場評価", "SEC 10-Q"].includes(view.label)) return 3;
@@ -679,14 +764,18 @@
       return "★★★★★".slice(0, score) + "☆☆☆☆☆".slice(0, 5 - score);
     }
 
-    function comparisonForIonQ(view) {
+    function comparisonForIonQ(view, title = "") {
+      const text = title.toLowerCase();
+      if (/ion trap|trapped ion|ion-trap|イオントラップ/.test(text) && /laser|レーザー/.test(text)) {
+        return "IonQもイオントラップ方式を使うため、レーザー制御や光学部品の小型化はかなり近いテーマ。ただしこの記事がIonQの採用や契約を示すわけではない。IonQにとっては、同方式の装置が商用化しやすくなる追い風として見るのが自然。";
+      }
       if (view.label === "競合動向") return "競合が性能・顧客・資金力で進むほどIonQの比較対象になる。IonQはイオントラップ方式の精度やクラウド提供、商用契約でどこまで差を出せるかが焦点。";
       if (view.label === "業界資金") return "業界への資金流入はIonQにも追い風。ただし資金が競合に入る場合、IonQは技術優位と売上化の速さで比較される。";
       return "直接のIonQ材料ではないが、量子市場が広がるほどIonQの成長余地も見られる。一方で競争激化なら相対評価は厳しくなる。";
     }
 
     function conclusionFor(item, view) {
-      if (item.type === "QNEWS") return "IonQ単体の材料ではなく、量子市場全体の追い風か競争激化かを読むニュース。";
+      if (item.type === "QNEWS") return "これはIonQの直接材料ではない。ただ、量子コンピューターが実験装置から商用機へ進むための周辺技術ニュースとしては見る価値がある。";
       if (item.type === "IR") return "公式材料なので優先度は高い。数字、相手先、売上化の時期が見えれば強い。";
       if (item.type === "SEC") return "一次情報なので重要。見出しで終わらせず、金額・株式数・添付資料まで見る価値がある。";
       return "報道ベースなので、株価の話題として使う前に一次情報と具体的な数字を確認したい。";

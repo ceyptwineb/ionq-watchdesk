@@ -3,12 +3,27 @@ const crypto = require("node:crypto");
 const SEC_CIK = "0001824920";
 const STORE_NAME = "ionq-watchdesk";
 const STATE_KEY = "watch-state";
-const DEFAULT_LOOKBACK_MINUTES = 3;
+const DEFAULT_LOOKBACK_MINUTES = 180;
 
-exports.handler = async () => {
+exports.handler = async (event = {}) => {
   const startedAt = new Date().toISOString();
 
   try {
+    if (event.queryStringParameters && event.queryStringParameters.test === "discord") {
+      const testItem = {
+        title: "通知テスト: IONQ Watchdesk",
+        url: "https://dynamic-praline-de62f0.netlify.app/",
+        source: "watch-ionq",
+        publishedAt: startedAt
+      };
+      await sendNotification(testItem, 1);
+      return json(200, {
+        ok: true,
+        result: "discord_test_sent",
+        webhookConfigured: Boolean(process.env.DISCORD_WEBHOOK_URL)
+      });
+    }
+
     const data = await collectLatest();
     const items = normalizeLatestItems(data);
     const state = await readState();
@@ -27,7 +42,14 @@ exports.handler = async () => {
         lastCheckedAt: startedAt,
         lastResult: "no_new_items"
       });
-      return json(200, { ok: true, result: "no_new_items", checkedAt: startedAt });
+      return json(200, {
+        ok: true,
+        result: "no_new_items",
+        checkedAt: startedAt,
+        totalItems: items.length,
+        webhookConfigured: Boolean(process.env.DISCORD_WEBHOOK_URL),
+        lookbackMinutes: Number(process.env.WATCH_LOOKBACK_MINUTES || DEFAULT_LOOKBACK_MINUTES)
+      });
     }
 
     const item = fresh[0];
@@ -59,17 +81,19 @@ exports.handler = async () => {
 };
 
 async function collectLatest() {
-  const [sec, officialNews, marketNews] = await Promise.all([
+  const [sec, officialNews, marketNews, quantumNews] = await Promise.all([
     getSecFilings(),
     getGoogleNews("site:investors.ionq.com/news/news-details IonQ"),
-    getGoogleNews("IONQ OR $IONQ")
+    getGoogleNews("IONQ OR $IONQ"),
+    getGoogleNews("\"quantum computing\" OR \"quantum computer\" OR \"quantum technology\" -IONQ -$IONQ")
   ]);
 
   return {
     updatedAt: new Date().toISOString(),
     sec,
     officialNews,
-    marketNews
+    marketNews,
+    quantumNews
   };
 }
 
@@ -196,6 +220,15 @@ function normalizeLatestItems(data) {
     kind: "株価材料",
     publishedAt: item.publishedAt,
     notes: `市場ニュースの最新候補\n公開時刻: ${item.publishedAt || "要確認"}`
+  })));
+
+  (data.quantumNews || []).forEach((item) => items.push(withId({
+    title: item.title,
+    url: item.url,
+    source: item.source || "Quantum News",
+    kind: "量子業界",
+    publishedAt: item.publishedAt,
+    notes: `量子業界ニュースの最新候補\n公開時刻: ${item.publishedAt || "要確認"}`
   })));
 
   (data.xPosts || []).forEach((item) => items.push(withId({
