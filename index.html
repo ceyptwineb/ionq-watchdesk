@@ -652,7 +652,7 @@
           return "イオントラップ量子計算の“心臓部”を小型化する話。地味だが、実用化にはかなり重要。";
         }
         if (/ibm|google|microsoft|amazon|aws|rigetti|d-wave|quantinuum|pasqal|quera|atom computing/.test(text)) {
-          return "競合が一歩進めた可能性。IonQを見るなら、相対評価の変化に注意。";
+          return "競合・周辺企業が一歩進めた可能性。まずは何が進んだのかを確認したい。";
         }
         if (/funding|raises|investment|grant|budget|fund|資金|投資|予算/.test(text)) {
           return "量子分野に資金が流れ込むニュース。市場拡大の温度感を見る材料。";
@@ -675,10 +675,10 @@
         return `${source}が「${shortTitle(title, 96)}」を報道。IonQそのものではなく、量子コンピューター産業の部品・技術・政策・競争環境を読むニュース。`;
       }
       if (item.type === "CIRS" && item.form) {
-        return `${item.ticker || "競合"}が${item.form}をSECへ提出。IonQではなく競合企業の一次情報。`;
+        return `${item.ticker || "競合"}が${item.form}をSECへ提出。競合企業の一次情報。`;
       }
       if (item.type === "CIRS") {
-        return `${source}が「${shortTitle(title, 96)}」を報道。IonQではなく競合・周辺企業の材料。`;
+        return `${source}が「${shortTitle(title, 96)}」を報道。競合・周辺企業の材料。`;
       }
       if (item.type === "SEC") return view.lead;
       return view.lead;
@@ -700,10 +700,10 @@
         return `${source}は、IonQ単体ではなく量子コンピューター業界の技術・政策・競争環境に関するニュースを報じている。IonQへの直接材料か、業界全体の追い風かを分けて読む必要がある。`;
       }
       if (item.type === "CIRS" && item.form) {
-        return `${item.ticker || "競合"}のSEC開示。IonQの直接材料ではないが、競合の資金調達、業績、契約、リスク変化はIonQの相対評価に影響する。`;
+        return `${item.ticker || "競合"}のSEC開示。資金調達、業績、契約、リスク変化など、その会社の状況を読む一次情報。`;
       }
       if (item.type === "CIRS") {
-        return `${source}による競合・周辺企業のニュース。IonQとの比較では、技術、顧客、資金力、商用化スピードのどこに影響するかを見る。`;
+        return `${source}による競合・周辺企業のニュース。技術、顧客、資金力、商用化スピードのどこに関係する話かを見る。`;
       }
       if (item.type === "SEC") return "SECに提出された一次情報。見出しではなく、本文の金額・日付・株式数・添付資料を確認する価値がある。";
       return `${source}によるIonQ関連ニュース。現時点では報道ベースなので、一次情報・具体的な数字・発表主体を確認してから材料性を判断したい。`;
@@ -753,7 +753,7 @@
         return "資金が入るほど研究開発と人材獲得が進む。業界全体には追い風だが、競合も加速するためIonQだけが得をする話ではない。";
       }
       if (item.type === "QNEWS") return view.body;
-      if (item.type === "CIRS") return "競合企業の材料は、IonQの事業価値を直接変えるわけではない。ただし同じ量子市場で比較されるため、競合の受注、資金調達、技術進展はIonQの見え方を変え得る。";
+      if (item.type === "CIRS") return "競合・周辺企業の材料。直接の投資判断ではなく、業界内の位置取りを見る材料として扱う。";
       return view.body;
     }
 
@@ -861,7 +861,7 @@
     function comparisonForIonQ(view, title = "", item = {}) {
       const text = title.toLowerCase();
       if (item.type === "CIRS") {
-        return "これはIonQの直接材料ではない。ただ、競合の開示やIRは $IONQ の相対評価に関わる。競合が顧客・資金・技術で進めばIonQには比較圧力、量子市場全体が伸びる材料なら追い風。";
+        return "IonQとの比較は、相手が技術・顧客・資金力のどこを伸ばしたかだけを見る。";
       }
       if (/ion trap|trapped ion|ion-trap|イオントラップ/.test(text) && /laser|レーザー/.test(text)) {
         return "IonQもイオントラップ方式を使うため、レーザー制御や光学部品の小型化はかなり近いテーマ。ただしこの記事がIonQの採用や契約を示すわけではない。$IONQ にとっては、同方式の装置が商用化しやすくなる追い風として見るのが自然。";
@@ -873,7 +873,7 @@
 
     function conclusionFor(item, view) {
       if (item.type === "QNEWS") return "これはIonQの直接材料ではない。ただ、量子コンピューターが実験装置から商用機へ進むための周辺技術ニュースとしては見る価値がある。";
-      if (item.type === "CIRS") return "IonQ本人のニュースではないが、競合の動きは $IONQ の評価に影響する。直接材料と比較材料を分けて扱いたい。";
+      if (item.type === "CIRS") return "競合・周辺企業の材料なので、まずはその会社の進展度を見てから判断する。";
       if (item.type === "IR") return "公式材料なので優先度は高い。数字、相手先、売上化の時期が見えれば強い。";
       if (item.type === "SEC") return "一次情報なので重要。見出しで終わらせず、金額・株式数・添付資料まで見る価値がある。";
       return "報道ベースなので、株価の話題として使う前に一次情報と具体的な数字を確認したい。";
@@ -991,16 +991,16 @@
     function analyzeCompetitorSec(item) {
       const form = String(item.form || "").toUpperCase();
       const ticker = item.ticker || "競合";
-      if (form === "8-K") return { label: "競合SEC", lead: `${ticker}が臨時重要開示8-KをSECへ提出。`, body: "競合の契約、資金調達、経営変更などが出る可能性がある一次情報。IonQとの比較材料になる。", watch: "フォーム、金額、契約相手、発効日、添付資料。" };
-      if (form === "10-Q") return { label: "競合SEC", lead: `${ticker}が四半期報告書10-QをSECへ提出。`, body: "競合の売上、現金、赤字、リスクを見られる資料。IonQと事業進捗を比較しやすい。", watch: "売上、現金、赤字、受注、リスク。" };
-      if (form === "10-K") return { label: "競合SEC", lead: `${ticker}が年次報告書10-KをSECへ提出。`, body: "競合の通期実績とリスクを確認できる資料。長期の競争力比較に使える。", watch: "成長率、資金余力、主要リスク、株式数。" };
+      if (form === "8-K") return { label: "競合SEC", lead: `${ticker}が臨時重要開示8-KをSECへ提出。`, body: "契約、資金調達、経営変更などが出る可能性がある一次情報。内容次第で市場の見方が変わる。", watch: "フォーム、金額、契約相手、発効日、添付資料。" };
+      if (form === "10-Q") return { label: "競合SEC", lead: `${ticker}が四半期報告書10-QをSECへ提出。`, body: "売上、現金、赤字、リスクを見られる資料。事業が前に進んでいるか、資金に余裕があるかを確認したい。", watch: "売上、現金、赤字、受注、リスク。" };
+      if (form === "10-K") return { label: "競合SEC", lead: `${ticker}が年次報告書10-KをSECへ提出。`, body: "通期実績と主要リスクを確認できる資料。成長率、資金余力、商用化の進み具合を見る。", watch: "成長率、資金余力、主要リスク、株式数。" };
       if (form.includes("S-3") || form.includes("424B")) return { label: "競合SEC", lead: `${ticker}が資金調達関連の${form}をSECへ提出。`, body: "競合の資金余力が増える可能性がある一方、希薄化も確認したい材料。", watch: "発行額、資金使途、希薄化、登録のみか発行済みか。" };
-      return { label: "競合SEC", lead: `${ticker}が${form || "SEC書類"}を提出。`, body: "競合企業の一次情報。IonQの直接材料ではないが、比較対象として確認する価値がある。", watch: "提出理由、金額、日付、添付資料。" };
+      return { label: "競合SEC", lead: `${ticker}が${form || "SEC書類"}を提出。`, body: "競合・周辺企業の一次情報。提出理由と数字を見て、重要度を判断したい。", watch: "提出理由、金額、日付、添付資料。" };
     }
 
     function impactFor(item, view) {
       if (item.type === "QNEWS") {
-        if (view.label === "競合動向") return "競合が先行するなら相対評価には逆風。ただし業界需要の拡大を示すならIonQにも追い風。";
+        if (view.label === "競合動向") return "競合が先行するなら警戒材料。市場拡大を示すなら業界全体には追い風。";
         if (view.label === "業界資金") return "量子分野への資金流入は追い風。ただしIonQへ直接入る資金ではない点は明確にしたい。";
         return "直接材料ではないが、量子市場の拡大・政策支援・商用化の速度を見る補助線になる。";
       }
