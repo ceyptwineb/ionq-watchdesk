@@ -583,7 +583,7 @@
       const title = cleanTitle(item.title);
       const reportTitle = titleForReport(item, view);
       const comparison = item.type === "QNEWS" ? `\n\nイオンキューとの比較：\n${comparisonForIonQ(view, title)}` : "";
-      const draft = `${reportTitle}\n${headlineFor(item, view)}\n\n要点：\n${eventLine(item, view, title)}\n\n用語の説明：\n${termExplanation(view, title)}\n\nどれくらい凄い？：\n${whyBig(item, view, title)}\n${comparison}\n\n評価：\n・凄さ：${importanceStars(item, view)}\n・株価影響：${stockStars(item, view)}\n・関連銘柄：${tickerLine(item, view)}\n\n結論：\n${conclusionFor(item, view)}\n\n出典：${shortSource(item)}${sourceUrl}`;
+      const draft = `${reportTitle}\n${headlineFor(item, view)}\n\n要点：\n${eventLine(item, view, title)}\n\nニュース内容：\n${newsExplanation(item, view, title)}\n\n用語の説明：\n${termExplanation(view, title)}\n\nどれくらい凄い？：\n${whyBig(item, view, title)}\n${comparison}\n\n評価：\n・凄さ：${importanceStars(item, view)}\n・株価影響：${stockStars(item, view)}\n・関連銘柄： ${tickerLine(item, view)}\n\n結論：\n${conclusionFor(item, view)}\n\n出典：${shortSource(item)}${sourceUrl}`;
       return fitXLimit(draft);
     }
 
@@ -653,8 +653,36 @@
       return view.lead;
     }
 
+    function newsExplanation(item, view, title) {
+      const text = `${title} ${item.description || ""}`.toLowerCase();
+      const source = shortSource(item);
+      if (/larger drop than the general market|drop than the general market|underperform|suffers a larger drop|market: key/.test(text)) {
+        return `${source}は、IonQ株が市場全体より大きく下げたことを取り上げている。これは新しい契約や技術発表というより、短期の株価変動を説明するタイプの記事。読むべき点は「下落の理由がIonQ固有の悪材料なのか、市場全体のリスクオフなのか」。`;
+      }
+      if (/stock.*(?:fall|drop|down|plunge|slide)|shares.*(?:fall|drop)|下落|急落/.test(text)) {
+        return `${source}は、IonQ株の下落要因を扱っている。重要なのは下落率そのものではなく、売上・契約・資金調達など事業価値を変える材料が含まれるかどうか。`;
+      }
+      if (/stock.*(?:rise|gain|jump|pop|surge|soar)|shares.*(?:rise|gain|jump|soar)|上昇|急騰/.test(text)) {
+        return `${source}は、IonQ株の上昇要因を扱っている。期待だけで上がったのか、契約・業績・技術進展などの裏付けがあるのかを分けて見たい。`;
+      }
+      if (item.type === "QNEWS") {
+        return `${source}は、IonQ単体ではなく量子コンピューター業界の技術・政策・競争環境に関するニュースを報じている。IonQへの直接材料か、業界全体の追い風かを分けて読む必要がある。`;
+      }
+      if (item.type === "SEC") return "SECに提出された一次情報。見出しではなく、本文の金額・日付・株式数・添付資料を確認する価値がある。";
+      return `${source}によるIonQ関連ニュース。現時点では報道ベースなので、一次情報・具体的な数字・発表主体を確認してから材料性を判断したい。`;
+    }
+
     function termExplanation(view, title) {
       const text = `${title} ${view.body}`.toLowerCase();
+      if (/larger drop than the general market|drop than the general market|general market|underperform/.test(text)) {
+        return "general marketは市場全体のこと。larger drop than the general marketは、主要指数や市場平均よりも大きく下げたという意味。IonQ固有の悪材料とは限らず、高成長株や量子関連株がまとめて売られた可能性もある。";
+      }
+      if (/stock.*(?:fall|drop|down|plunge|slide)|shares.*(?:fall|drop)|下落|急落/.test(text)) {
+        return "株価下落記事は、事業の悪化を示すものと、短期の需給・地合いを説明するものがある。本文で下落理由が具体的かどうかを見る必要がある。";
+      }
+      if (/stock.*(?:rise|gain|jump|pop|surge|soar)|shares.*(?:rise|gain|jump|soar)|上昇|急騰/.test(text)) {
+        return "株価上昇記事は、材料の強さと期待先行を分けて見る必要がある。契約額や業績見通しがない場合、短期の値動き説明に近い。";
+      }
       if (/ion trap|trapped ion|ion-trap|イオントラップ/.test(text) && /laser|レーザー/.test(text)) {
         return "イオントラップ方式は、電場でイオンを閉じ込め、レーザーで量子状態を操作する方式。レーザー増幅器はそのレーザー信号を強く安定させる部品で、小型化できると装置全体を小さく・安定・量産しやすくなる。";
       }
@@ -842,7 +870,7 @@
         body: "量子技術への期待を、売上成長・受注残・資金余力という実際の数字で検証する材料。",
         watch: "売上、受注残、現金、赤字、株式希薄化。"
       };
-      if (/stock.*(?:fall|drop|down|plunge|slide)|why.*fall|shares.*(?:fall|drop)|下落|急落/.test(text)) return {
+      if (/stock.*(?:fall|drop|down|plunge|slide)|why.*fall|shares.*(?:fall|drop)|suffers a larger drop|larger drop than the general market|underperform|下落|急落/.test(text)) return {
         label: "株価",
         lead: `${source}がIonQ株の下落要因を報道。${signalFromTitle(title)}`.trim(),
         body: "材料そのものと短期的な需給を分け、事業価値を変える事実があるかを見極めたい。",
