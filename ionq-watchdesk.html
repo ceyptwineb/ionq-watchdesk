@@ -748,9 +748,132 @@
       const sourceUrl = /^https?:\/\//i.test(String(item.url || "")) ? `\n${item.url}` : "";
       const title = cleanTitle(item.title);
       const reportTitle = titleForReport(item, view);
+      // 見出しに含まれる具体的な数字・相手先を拾って前面に出す
+      const facts = extractFacts(item);
+      const factsBlock = facts.length ? `\n\n押さえる数字：\n${facts.map(f => `・${f}`).join("\n")}` : "";
+      const when = formatDate(item.publishedAt || item.acceptedAt || item.filingDate);
+      const metaLine = when ? `\n（${when} JST時点・${shortSource(item)}）` : "";
       const comparison = ["QNEWS", "CIRS"].includes(item.type) ? `\n\nIonQとの比較：\n${comparisonForIonQ(view, title, item)}` : "";
-      const draft = `${reportTitle}\n${headlineFor(item, view)}\n\n要点：\n${eventLine(item, view, title)}\n\nニュース内容：\n${newsExplanation(item, view, title)}\n\n読み解き：\n${termExplanation(view, title)}\n\nどれくらい凄い？：\n${whyBig(item, view, title)}\n${comparison}\n\n評価：\n・凄さ：${importanceStars(item, view)}\n・株価影響：${stockStars(item, view)}\n・関連銘柄： ${tickerLine(item, view)}\n\n結論：\n${conclusionFor(item, view)}\n\n出典：${shortSource(item)}${sourceUrl}`;
+      // 英語見出しの日本語ハイライト（1行）
+      const summaryLine = `\nひとことで：${japaneseSummary(item, view, facts)}`;
+      // セクション統合：「読み解き」に用語解説＋注目度をまとめ、3→2セクションに
+      const insight = `${termExplanation(view, title)}\n${whyBig(item, view, title)}`;
+      const draft = `${reportTitle}\n${headlineFor(item, view)}${summaryLine}${metaLine}\n\n要点：\n${eventLine(item, view, title)}${factsBlock}\n\nニュース内容：\n${newsExplanation(item, view, title)}\n\n読み解き：\n${insight}${comparison}\n\n評価：\n・凄さ：${importanceStars(item, view)}\n・株価影響：${stockStars(item, view)}\n・関連銘柄： ${tickerLine(item, view)}\n\n結論：\n${conclusionFor(item, view)}\n\n出典：${shortSource(item)}${sourceUrl}`;
       return fitXLimit(draft);
+    }
+
+    // 見出し・本文から定量的な事実（値動き・金額・量子ビット数・関係機関）を抽出
+    function extractFacts(item) {
+      const text = `${item.title || ""} ${item.description || ""}`;
+      const facts = [];
+
+      const pct = text.match(/([+-]?\d+(?:\.\d+)?)\s?%/);
+      if (pct) {
+        const up = /(jump|surg|soar|rally|rise|gain|rocket|pop|climb|上昇|急騰|高騰)/i.test(text);
+        const down = /(fall|drop|plunge|slump|sink|slide|declin|tumble|crash|下落|急落)/i.test(text);
+        facts.push(`株価${down && !up ? "下落" : (up ? "上昇" : "変動")} ${pct[1].replace("+", "")}%`);
+      }
+
+      const money = text.match(/\$\s?\d[\d,]*(?:\.\d+)?\s?(?:billion|million|bn|b|m)?\b/gi);
+      if (money) money.slice(0, 2).forEach(m => facts.push(`金額 ${normalizeMoney(m)}`));
+
+      const qubit = text.match(/(\d[\d,]*)\s?-?\s?qubit/i);
+      if (qubit) facts.push(`量子ビット ${qubit[1]}`);
+
+      const orgs = [
+        [/air force|空軍/i, "米空軍"],
+        [/darpa/i, "DARPA"],
+        [/\bnasa\b/i, "NASA"],
+        [/department of defense|\bdod\b|pentagon|国防総省/i, "米国防総省"],
+        [/\bnist\b/i, "NIST"],
+        [/\bdoe\b|department of energy/i, "米エネルギー省"],
+        [/\barmy\b|陸軍/i, "米陸軍"],
+        [/\bnavy\b|海軍/i, "米海軍"]
+      ];
+      orgs.forEach(([re, label]) => {
+        if (re.test(text) && !facts.some(f => f.includes(label))) facts.push(`関係先 ${label}`);
+      });
+
+      return facts;
+    }
+
+    function normalizeMoney(raw) {
+      const s = raw.replace(/\s+/g, "");
+      const num = parseFloat(s.replace(/[^\d.]/g, ""));
+      if (!isFinite(num)) return raw.trim();
+      const isB = /billion|bn|b$/i.test(s);
+      const isM = /million|m$/i.test(s);
+      let manUsd = null;
+      if (isB) manUsd = num * 100000;   // 1B = 100,000万ドル
+      else if (isM) manUsd = num * 100; // 1M = 100万ドル
+      if (manUsd == null) return `$${jpNum(num)}`;
+      const head = `$${jpNum(num)}${isB ? "B" : "M"}`;
+      if (manUsd >= 10000) return `${head}（約${jpNum(Math.round(manUsd / 10000 * 100) / 100)}億ドル）`;
+      return `${head}（約${jpNum(manUsd)}万ドル）`;
+    }
+
+    function jpNum(n) {
+      return Number.isInteger(n) ? n.toLocaleString("ja-JP") : n.toLocaleString("ja-JP", { maximumFractionDigits: 2 });
+    }
+
+    // 英語見出しを構造化要素から日本語1行に要約（完全翻訳ではなくハイライト）
+    function japaneseSummary(item, view, facts) {
+      const labelPhrase = {
+        "提携・契約": "提携・契約に関する話題", "M&A": "買収・合併の話題", "業績": "業績・決算の話題",
+        "株価": "株価変動の話題", "政府案件": "政府・国防案件の話題", "技術": "技術・性能の話題",
+        "市場評価": "アナリスト評価・目標株価の話題", "投資比較": "他の量子銘柄との比較", "資金調達": "資金調達の話題",
+        "大口保有": "大株主の保有動向", "競合動向": "競合の動向", "業界資金": "量子業界への資金流入",
+        "量子業界": "量子業界の話題", "公式発表": "IonQ公式発表", "SEC 8-K": "SEC 8-K（臨時重要開示）",
+        "SEC 10-Q": "SEC 10-Q（四半期報告）", "SEC 10-K": "SEC 10-K（年次報告）",
+        "競合SEC": "競合のSEC開示", "NEWS": "IonQ関連の報道", "SEC": "SEC開示"
+      }[view.label] || "IonQ関連の最新情報";
+      const subject = item.type === "IR" ? "IonQ公式" : (item.type === "SEC" ? "IonQ（SEC）" : shortSource(item));
+      const tail = facts.length ? `（${facts.join("、")}）` : "";
+      return `${subject}：${labelPhrase}${tail}`;
+    }
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    // 抽出した数字・相手先の大きさで★を加点する（金額・値動き・政府案件・量子ビット数）
+    function factBump(item) {
+      const text = `${item.title || ""} ${item.description || ""}`;
+      let imp = 0;
+      let stock = 0;
+
+      const moneyMatch = text.match(/\$\s?\d[\d,]*(?:\.\d+)?\s?(?:billion|million|bn|b|m)?\b/i);
+      if (moneyMatch) {
+        const oku = moneyToOku(moneyMatch[0]);
+        if (oku >= 5) { imp += 2; stock += 2; }
+        else if (oku >= 1) { imp += 1; stock += 1; }
+        else { stock += 1; }
+      }
+
+      const pct = text.match(/([+-]?\d+(?:\.\d+)?)\s?%/);
+      if (pct) {
+        const v = Math.abs(parseFloat(pct[1]));
+        if (v >= 10) stock += 2;
+        else if (v >= 5) stock += 1;
+      }
+
+      if (/air force|darpa|\bnasa\b|department of (defense|energy)|\bdod\b|\bnist\b|pentagon|空軍|国防|陸軍|海軍/i.test(text)) {
+        imp += 1;
+      }
+
+      const qubit = text.match(/(\d[\d,]*)\s?-?\s?qubit/i);
+      if (qubit && parseInt(qubit[1].replace(/,/g, ""), 10) >= 100) imp += 1;
+
+      return { imp, stock };
+    }
+
+    function moneyToOku(raw) {
+      const s = raw.replace(/\s+/g, "");
+      const num = parseFloat(s.replace(/[^\d.]/g, ""));
+      if (!isFinite(num)) return 0;
+      if (/billion|bn|b$/i.test(s)) return num * 10;   // 1B = 10億ドル
+      if (/million|m$/i.test(s)) return num / 100;     // 100M = 1億ドル
+      return 0;
     }
 
     function titleForReport(item, view) {
@@ -854,7 +977,9 @@
     }
 
     function termExplanation(view, title) {
-      const text = `${title} ${view.body}`.toLowerCase();
+      // 見出し本文だけで判定する。view.body（テンプレ文）を混ぜると
+      // 「8-K」なのに"資金"に誤反応する等のズレが出るため使わない。
+      const text = String(title || "").toLowerCase();
       if (/larger drop than the general market|drop than the general market|general market|underperform/.test(text)) {
         return "general marketは市場全体のこと。larger drop than the general marketは、主要指数や市場平均よりも大きく下げたという意味。IonQ固有の悪材料とは限らず、高成長株や量子関連株がまとめて売られた可能性もある。";
       }
@@ -927,7 +1052,8 @@
     }
 
     function importanceStars(item, view) {
-      const score = scoreForImportance(item, view);
+      const bump = factBump(item).imp;
+      const score = clamp(scoreForImportance(item, view) + bump, 1, 5);
       const reasons = {
         5: "会社や業界の前提を変え得る材料。",
         4: "事業評価にかなり効く可能性がある材料。",
@@ -935,11 +1061,12 @@
         2: "参考情報。直接の事業インパクトは限定的。",
         1: "薄い材料。話題として扱う程度。"
       };
-      return `${stars(score)} ${score}/5｜${reasons[score]}`;
+      return `${stars(score)} ${score}/5｜${reasons[score]}${bump > 0 ? "（金額・規模を加味）" : ""}`;
     }
 
     function stockStars(item, view) {
-      const score = scoreForStock(item, view);
+      const bump = factBump(item).stock;
+      const score = clamp(scoreForStock(item, view) + bump, 1, 5);
       const reasons = {
         5: "株価を大きく動かす可能性が高い。",
         4: "短期でも中期でも材料視されやすい。",
@@ -947,7 +1074,7 @@
         2: "株価影響は限定的になりやすい。",
         1: "株価材料としては弱い。"
       };
-      return `${stars(score)} ${score}/5｜${reasons[score]}`;
+      return `${stars(score)} ${score}/5｜${reasons[score]}${bump > 0 ? "（数字を加味）" : ""}`;
     }
 
     function tickerLine(item, view) {
@@ -1171,7 +1298,7 @@
     }
 
     function quoteTitle(title) {
-      return `「${shortTitle(title, 72)}」`;
+      return `「${shortTitle(title, 110)}」`;
     }
 
     function signalFromTitle(title) {

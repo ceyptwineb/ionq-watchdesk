@@ -11,6 +11,7 @@ exports.handler = async (event = {}) => {
   const startedAt = new Date().toISOString();
 
   try {
+    await connectBlobs(event);
     if (event.queryStringParameters && event.queryStringParameters.test === "discord") {
       const testItem = {
         title: "通知テスト: IONQ Watchdesk",
@@ -548,12 +549,36 @@ async function sendPushover(title, message, url) {
   if (!response.ok) throw new Error(`Pushover failed: ${response.status}`);
 }
 
+// Lambda形式の関数ではNetlify Blobsのコンテキストをイベントから接続する必要がある。
+// これが無いと "environment has not been configured to use Netlify Blobs" になり、
+// 通知の重複防止が一切効かず毎回再通知してしまう。
+async function connectBlobs(event) {
+  try {
+    const { connectLambda } = await import("@netlify/blobs");
+    if (typeof connectLambda === "function") connectLambda(event);
+  } catch (error) {
+    console.warn("connectLambda unavailable:", error.message);
+  }
+}
+
+async function openStore() {
+  const { getStore } = await import("@netlify/blobs");
+  const opts = { name: STORE_NAME, consistency: "strong" };
+  // 自動構成が効かない環境向けのフォールバック（環境変数があれば明示指定）
+  const siteID = process.env.BLOBS_SITE_ID || process.env.NETLIFY_SITE_ID || process.env.SITE_ID;
+  const token = process.env.BLOBS_TOKEN || process.env.NETLIFY_API_TOKEN || process.env.NETLIFY_AUTH_TOKEN;
+  if (siteID && token) {
+    opts.siteID = siteID;
+    opts.token = token;
+  }
+  return getStore(opts);
+}
+
 async function readState() {
   try {
-    const { getStore } = await import("@netlify/blobs");
     // strong consistency: 直前の実行で書いた通知済みリストを確実に読み、
     // 同じ記事を毎分再通知してしまうのを防ぐ（既定のeventualだと取りこぼす）
-    const store = getStore({ name: STORE_NAME, consistency: "strong" });
+    const store = await openStore();
     const value = await store.get(STATE_KEY, { consistency: "strong" });
     return value ? JSON.parse(value) : {};
   } catch (error) {
@@ -569,8 +594,7 @@ async function readState() {
 async function writeState(state) {
   try {
     if (state.storageUnavailable) return;
-    const { getStore } = await import("@netlify/blobs");
-    const store = getStore({ name: STORE_NAME, consistency: "strong" });
+    const store = await openStore();
     await store.set(STATE_KEY, JSON.stringify(state, null, 2));
   } catch (error) {
     console.warn("Could not write state. Notification was still processed.", error.message);
