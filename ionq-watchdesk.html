@@ -465,7 +465,7 @@
   </div>
 
   <script>
-    const PUBLIC_ORIGIN = "https://ionqnews.netlify.app";
+    const PUBLIC_ORIGIN = "https://ionqrnews.netlify.app";
     const PUBLIC_API = `${PUBLIC_ORIGIN}/.netlify/functions/latest-ionq`;
     const LOCAL_VIEW = location.protocol === "file:" || ["localhost", "127.0.0.1"].includes(location.hostname);
     const API_URL = LOCAL_VIEW ? PUBLIC_API : "/.netlify/functions/latest-ionq";
@@ -771,9 +771,17 @@
 
       const pct = text.match(/([+-]?\d+(?:\.\d+)?)\s?%/);
       if (pct) {
-        const up = /(jump|surg|soar|rally|rise|gain|rocket|pop|climb|上昇|急騰|高騰)/i.test(text);
-        const down = /(fall|drop|plunge|slump|sink|slide|declin|tumble|crash|下落|急落)/i.test(text);
-        facts.push(`株価${down && !up ? "下落" : (up ? "上昇" : "変動")} ${pct[1].replace("+", "")}%`);
+        const n = pct[1].replace("+", "");
+        const up = /(jump|surg|soar|rally|rise|gain|rocket|pop|climb|grow|increase|up\b|上昇|急騰|高騰|増|伸)/i.test(text);
+        const down = /(fall|drop|plunge|slump|sink|slide|declin|tumble|crash|down\b|下落|急落|減)/i.test(text);
+        const dir = down && !up ? "減" : (up ? "増" : "変動");
+        if (/stock|shares|株価|株が/i.test(text)) {
+          facts.push(`株価${down && !up ? "下落" : "上昇"} ${n}%`);
+        } else if (/revenue|sales|bookings|backlog|growth|margin|売上|受注|成長|業績|利益/i.test(text)) {
+          facts.push(`業績${dir} ${n}%`);
+        } else {
+          facts.push(`変動 ${n}%`);
+        }
       }
 
       const money = text.match(/\$\s?\d[\d,]*(?:\.\d+)?\s?(?:billion|million|bn|b|m)?\b/gi);
@@ -1041,7 +1049,36 @@
       }
       if (item.type === "QNEWS") return view.body;
       if (item.type === "CIRS") return "競合・周辺企業の材料。直接の投資判断ではなく、業界内の位置取りを見る材料として扱う。";
-      return view.body;
+      // IR・市場ニュース・SEC：テーマ別にIonQ固有の投資家視点を出す
+      return ionqAngle(item) || view.body;
+    }
+
+    // IonQ直接ニュースのテーマを判定し、投資家が具体的に見るべき点を返す（テンプレ脱却）
+    function ionqAngle(item) {
+      const text = `${item.title || ""} ${item.description || ""}`.toLowerCase();
+
+      if (/earnings|revenue|guidance|backlog|bookings|results|quarter|annual|10-q|10-k|決算|売上|受注|業績|四半期|通期/.test(text)) {
+        return "IonQの決算で本当に見るべきは売上の絶対額より、①受注残(backlog)・予約(bookings)の伸び、②手元現金（増資なしで何年戦えるか）、③純損失が縮小しているか。量子はまだ投資先行フェーズなので、赤字でも受注と現金が積み上がっていれば前進と読める。逆に受注横ばい＋現金減＋希薄化なら警戒。";
+      }
+      if (/government|defense|darpa|air force|navy|army|federal|nasa|doe|nist|政府|国防|防衛|軍/.test(text)) {
+        return "政府・防衛・国研の案件は信頼性と安定収益の裏付けになりやすく、IonQが実績を伸ばしている領域。重要度は『受注額』と『IonQの担当範囲（主契約か一部参加か）』『複数年か単発か』で決まる。採択・参加表明だけなら続報待ち。";
+      }
+      if (/contract|partnership|agreement|collaboration|deal|customer|adopt|提携|契約|協業|採用|導入|顧客/.test(text)) {
+        return "契約は『実証実験(PoC)』か『複数年の本契約』かで価値が段違い。相手先・金額・期間が明示され、売上計上の時期が見えるほど強い。AWS/Azure/Google Cloud経由の利用拡大なら、継続課金という売上の“質”の面で効く。";
+      }
+      if (/fidelity|qubit|\baq\b|algorithmic|roadmap|gate|error correction|忠実度|量子ビット|精度|誤り訂正|ロードマップ/.test(text)) {
+        return "IonQの性能はAQ(アルゴリズム量子ビット＝実効的に使える数)で見るのが筋。物理量子ビットの数より、忠実度×全結合×エラー率で決まる実用性能が肝心。イオントラップの強みは高忠実度と全結合で、ここが伸びれば実アプリでの優位に直結する。目標値か実測値か、提供時期はいつかを必ず確認。";
+      }
+      if (/network|interconnect|photonic|entangl|量子ネット|相互接続|もつれ/.test(text)) {
+        return "量子ネットワーキング(量子間接続)はIonQが注力する差別化領域。複数の量子コンピュータを繋いで規模を稼ぐ構想で、単体性能の競争とは別軸の長期優位になり得る。実証段階か製品化かで距離感を測りたい。";
+      }
+      if (/offering|raise|capital|dilution|shares|\batm\b|prospectus|registration|s-3|424b|増資|新株|希薄化|調達|目論見/.test(text)) {
+        return "増資・新株発行は開発資金を厚くする反面、既存株主の希薄化要因。IonQは赤字先行なので資金確保自体は前向きにも取れるが、発行株数・使途・ATM(随時売出)か一括かを確認。手元現金が潤沢なタイミングでの発行はネガティブに受け取られやすい。";
+      }
+      if (/acquisition|acquire|merger|買収|合併/.test(text)) {
+        return "IonQは買収で技術・人材・顧客を取り込む動きを見せている。見るべきは買収額と、それが売上・技術ロードマップにどう寄与するか。株式対価なら希薄化、現金対価なら手元資金の減少もチェック。";
+      }
+      return "";
     }
 
     function termNote(view) {
