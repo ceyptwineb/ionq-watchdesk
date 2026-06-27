@@ -551,8 +551,10 @@ async function sendPushover(title, message, url) {
 async function readState() {
   try {
     const { getStore } = await import("@netlify/blobs");
-    const store = getStore(STORE_NAME);
-    const value = await store.get(STATE_KEY);
+    // strong consistency: 直前の実行で書いた通知済みリストを確実に読み、
+    // 同じ記事を毎分再通知してしまうのを防ぐ（既定のeventualだと取りこぼす）
+    const store = getStore({ name: STORE_NAME, consistency: "strong" });
+    const value = await store.get(STATE_KEY, { consistency: "strong" });
     return value ? JSON.parse(value) : {};
   } catch (error) {
     console.warn("Could not read state. Continuing without persistent dedupe.", error.message);
@@ -568,7 +570,7 @@ async function writeState(state) {
   try {
     if (state.storageUnavailable) return;
     const { getStore } = await import("@netlify/blobs");
-    const store = getStore(STORE_NAME);
+    const store = getStore({ name: STORE_NAME, consistency: "strong" });
     await store.set(STATE_KEY, JSON.stringify(state, null, 2));
   } catch (error) {
     console.warn("Could not write state. Notification was still processed.", error.message);

@@ -4,8 +4,10 @@
 [functions]
   directory = "netlify/functions"
 
+# 通知チェックの間隔。毎分(* * * * *)だと多すぎるため5分おきに変更。
+# 速報性を上げたいなら "*/3 * * * *"(3分) などに、戻すなら "* * * * *"。
 [functions."watch-ionq"]
-  schedule = "* * * * *"
+  schedule = "*/5 * * * *"
 
 [[headers]]
   for = "/*"
