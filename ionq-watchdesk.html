@@ -465,9 +465,12 @@
   </div>
 
   <script>
-    const PUBLIC_API = "https://ionqnews.netlify.app/.netlify/functions/latest-ionq";
+    const PUBLIC_ORIGIN = "https://ionqnews.netlify.app";
+    const PUBLIC_API = `${PUBLIC_ORIGIN}/.netlify/functions/latest-ionq`;
     const LOCAL_VIEW = location.protocol === "file:" || ["localhost", "127.0.0.1"].includes(location.hostname);
     const API_URL = LOCAL_VIEW ? PUBLIC_API : "/.netlify/functions/latest-ionq";
+    // 「投稿済み」状態を端末間で共有する保存API
+    const POSTED_API = LOCAL_VIEW ? `${PUBLIC_ORIGIN}/.netlify/functions/posted` : "/.netlify/functions/posted";
     const REFRESH_SECONDS = 60;
     const state = {
       entries: { IR: [], SEC: [], NEWS: [], QNEWS: [], CIRS: [], X: [] },
@@ -497,7 +500,62 @@
     }
 
     function itemId(item) {
-      return encodeURIComponent(`${item.type}|${item.url || ""}|${item.title || ""}`).slice(0, 500);
+      // 端末・時間が変わっても同じ記事は同じIDになるよう安定キーにする。
+      // SEC等(formあり)はaccession付きURLが固定なのでURL、ニュースはリンクが
+      // 変動するため正規化タイトル+ソースを使う。
+      const basis = item.form
+        ? `${item.type}|${item.url || ""}`
+        : `${item.type}|${normalizeSig(item.title)}|${item.source || ""}`;
+      return encodeURIComponent(basis).slice(0, 500);
+    }
+
+    function normalizeSig(text) {
+      return String(text || "")
+        .toLowerCase()
+        .replace(/https?:\/\/\S+/g, "")
+        .replace(/\s+-\s+[^-|]+$/g, "")
+        .replace(/[\s　]+/g, " ")
+        .trim();
+    }
+
+    function persistPostedLocal() {
+      localStorage.setItem("ionq_posted_v2", JSON.stringify([...state.posted]));
+    }
+
+    // チェックの更新：ローカル即時保存＋サーバーへ同期（失敗してもローカルは保持）
+    function setPosted(id, posted) {
+      if (posted) state.posted.add(id);
+      else state.posted.delete(id);
+      persistPostedLocal();
+      fetch(POSTED_API, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id, posted })
+      }).catch(() => {});
+    }
+
+    // サーバーの投稿済み状態を読み込み、画面・ローカルに反映（端末間同期）
+    async function loadPosted() {
+      try {
+        const res = await fetch(POSTED_API, { cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        const serverIds = new Set(data.ids || []);
+        // オフライン中にこの端末だけで付けた分は残しつつ、サーバーを正とする
+        const localOnly = [...state.posted].filter(id => !serverIds.has(id));
+        state.posted = new Set(serverIds);
+        localOnly.forEach(id => state.posted.add(id));
+        persistPostedLocal();
+        if (localOnly.length) {
+          fetch(POSTED_API, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ addIds: localOnly })
+          }).catch(() => {});
+        }
+      } catch (error) {
+        // オフライン等：localStorageのみで継続
+      }
     }
 
     function normalize(data) {
@@ -612,9 +670,7 @@
       list.querySelectorAll("[data-top-posted]").forEach(checkbox => {
         checkbox.addEventListener("change", () => {
           const id = checkbox.dataset.topPosted;
-          if (checkbox.checked) state.posted.add(id);
-          else state.posted.delete(id);
-          localStorage.setItem("ionq_posted_v2", JSON.stringify([...state.posted]));
+          setPosted(id, checkbox.checked);
           if (state.selected && itemId(state.selected) === id) els.postedCheck.checked = checkbox.checked;
           ["IR", "SEC", "NEWS", "QNEWS", "CIRS", "X"].forEach(renderLane);
           renderTopFeed();
@@ -655,9 +711,7 @@
       list.querySelectorAll("[data-feed-posted]").forEach(checkbox => {
         checkbox.addEventListener("change", () => {
           const id = checkbox.dataset.feedPosted;
-          if (checkbox.checked) state.posted.add(id);
-          else state.posted.delete(id);
-          localStorage.setItem("ionq_posted_v2", JSON.stringify([...state.posted]));
+          setPosted(id, checkbox.checked);
           if (state.selected && itemId(state.selected) === id) els.postedCheck.checked = checkbox.checked;
           renderLane(type);
           renderTopFeed();
@@ -1210,6 +1264,7 @@
         if (!response.ok) throw new Error(`取得失敗 ${response.status}`);
         const data = await response.json();
         if (data.error) throw new Error(data.message || data.error);
+        await loadPosted();   // 投稿済み状態を端末間で同期
         normalize(data);
         renderAll();
         els.lastUpdated.textContent = `更新 ${formatDate(data.updatedAt || new Date())} JST`;
@@ -1239,9 +1294,7 @@
     els.postedCheck.addEventListener("change", () => {
       if (!state.selected) return;
       const id = itemId(state.selected);
-      if (els.postedCheck.checked) state.posted.add(id);
-      else state.posted.delete(id);
-      localStorage.setItem("ionq_posted_v2", JSON.stringify([...state.posted]));
+      setPosted(id, els.postedCheck.checked);
       renderLane(state.selected.type);
       renderTopFeed();
     });
