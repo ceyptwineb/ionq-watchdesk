@@ -563,7 +563,7 @@ async function connectBlobs(event) {
 
 async function openStore() {
   const { getStore } = await import("@netlify/blobs");
-  const opts = { name: STORE_NAME, consistency: "strong" };
+  const opts = { name: STORE_NAME };
   // 自動構成が効かない環境向けのフォールバック（環境変数があれば明示指定）
   const siteID = process.env.BLOBS_SITE_ID || process.env.NETLIFY_SITE_ID || process.env.SITE_ID;
   const token = process.env.BLOBS_TOKEN || process.env.NETLIFY_API_TOKEN || process.env.NETLIFY_AUTH_TOKEN;
@@ -576,10 +576,10 @@ async function openStore() {
 
 async function readState() {
   try {
-    // strong consistency: 直前の実行で書いた通知済みリストを確実に読み、
-    // 同じ記事を毎分再通知してしまうのを防ぐ（既定のeventualだと取りこぼす）
+    // cronは5分間隔なので、前回の書き込みはeventual整合でも十分に伝播済み。
+    // strong整合はこの実行環境(uncachedEdgeURL未設定)では使えないため既定を使う。
     const store = await openStore();
-    const value = await store.get(STATE_KEY, { consistency: "strong" });
+    const value = await store.get(STATE_KEY);
     return value ? JSON.parse(value) : {};
   } catch (error) {
     console.warn("Could not read state. Continuing without persistent dedupe.", error.message);

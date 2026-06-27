@@ -11,7 +11,7 @@ exports.handler = async (event = {}) => {
     const blobs = await import("@netlify/blobs");
     // Lambda形式の関数ではBlobsコンテキストをイベントから接続する（必須）
     if (typeof blobs.connectLambda === "function") blobs.connectLambda(event);
-    const opts = { name: STORE_NAME, consistency: "strong" };
+    const opts = { name: STORE_NAME };
     const siteID = process.env.BLOBS_SITE_ID || process.env.NETLIFY_SITE_ID || process.env.SITE_ID;
     const token = process.env.BLOBS_TOKEN || process.env.NETLIFY_API_TOKEN || process.env.NETLIFY_AUTH_TOKEN;
     if (siteID && token) {
@@ -52,7 +52,7 @@ exports.handler = async (event = {}) => {
 
 async function readIds(store) {
   try {
-    const value = await store.get(POSTED_KEY, { consistency: "strong" });
+    const value = await store.get(POSTED_KEY);
     if (!value) return [];
     const parsed = JSON.parse(value);
     return Array.isArray(parsed.ids) ? parsed.ids : [];
