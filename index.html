@@ -390,7 +390,7 @@
       <div class="status">
         <span class="live"><i class="dot"></i>自動更新中</span>
         <span id="lastUpdated">未更新</span>
-        <span id="countdown">次回 60秒</span>
+        <span id="countdown">次回 5分</span>
         <button class="icon-btn" id="refreshButton" type="button">更新</button>
       </div>
     </header>
@@ -471,7 +471,7 @@
     const API_URL = LOCAL_VIEW ? PUBLIC_API : "/.netlify/functions/latest-ionq";
     // 「投稿済み」状態を端末間で共有する保存API
     const POSTED_API = LOCAL_VIEW ? `${PUBLIC_ORIGIN}/.netlify/functions/posted` : "/.netlify/functions/posted";
-    const REFRESH_SECONDS = 60;
+    const REFRESH_SECONDS = 300;   // 自動更新は5分間隔（関数呼び出し＝Netlify使用量を抑える）。手動更新はいつでも可
     const state = {
       entries: { IR: [], SEC: [], NEWS: [], QNEWS: [], CIRS: [], X: [] },
       selected: null,
@@ -753,7 +753,9 @@
       const factsBlock = facts.length ? `\n\n押さえる数字：\n${facts.map(f => `・${f}`).join("\n")}` : "";
       const when = formatDate(item.publishedAt || item.acceptedAt || item.filingDate);
       const metaLine = when ? `\n（${when} JST時点・${shortSource(item)}）` : "";
-      const comparison = ["QNEWS", "CIRS"].includes(item.type) ? `\n\nIonQとの比較：\n${comparisonForIonQ(view, title, item)}` : "";
+      // QNEWS/CIRSに加え、具体的な競合が見出しに出ていれば比較欄を出す（NEWS型の「IonQ vs ○○」等）
+      const showComparison = ["QNEWS", "CIRS"].includes(item.type) || rivalCompanies(item).length > 0;
+      const comparison = showComparison ? `\n\nIonQとの比較：\n${comparisonForIonQ(view, title, item)}` : "";
       // 英語見出しの日本語ハイライト（1行）
       const summaryLine = `\nひとことで：${japaneseSummary(item, view, facts)}`;
       // セクション統合：「読み解き」に用語解説＋注目度をまとめ、3→2セクションに
@@ -793,6 +795,12 @@
       orgs.forEach(([re, label]) => {
         if (re.test(text) && !facts.some(f => f.includes(label))) facts.push(`関係先 ${label}`);
       });
+
+      // 比較・対決記事（例「QBTS or RGTI」「IonQ vs Rigetti」）の対象銘柄を拾う
+      const titleTickers = findTickers(item.title);
+      if (titleTickers.length >= 2 && /\bvs\.?\b|\bversus\b|\bor\b|対決|比較/i.test(item.title || "")) {
+        facts.push(`比較 ${titleTickers.slice(0, 3).join(" vs ")}`);
+      }
 
       return facts;
     }
@@ -918,7 +926,7 @@
         if (/ion trap|trapped ion|ion-trap|イオントラップ/.test(text) && /laser|レーザー/.test(text)) {
           return "イオントラップ量子計算の“心臓部”を小型化する話。地味だが、実用化にはかなり重要。";
         }
-        if (/ibm|google|microsoft|amazon|aws|rigetti|d-wave|quantinuum|pasqal|quera|atom computing/.test(text)) {
+        if (/ibm|google|alphabet|microsoft|azure|amazon|aws|braket|rigetti|rgti|d-wave|dwave|qbts|quantum computing inc|qubt|quantinuum|honeywell|\bhon\b|pasqal|quera|atom computing|nvidia|nvda/.test(text)) {
           return "競合・周辺企業が一歩進めた可能性。まずは何が進んだのかを確認したい。";
         }
         if (/funding|raises|investment|grant|budget|fund|資金|投資|予算/.test(text)) {
@@ -945,6 +953,10 @@
         return `${item.ticker || "競合"}が${item.form}をSECへ提出。競合企業の一次情報。`;
       }
       if (item.type === "CIRS") {
+        const tt = findTickers(item.title);
+        if (tt.length >= 2) {
+          return `${source}が「${shortTitle(title, 96)}」を報道。${tt.slice(0, 3).map(t => COMPANY_INFO[t] ? COMPANY_INFO[t].name : t).join("／")}を巡る競合材料。`;
+        }
         return `${source}が「${shortTitle(title, 96)}」を報道。競合・周辺企業の材料。`;
       }
       if (item.type === "SEC") return view.lead;
@@ -954,6 +966,12 @@
     function newsExplanation(item, view, title) {
       const text = `${title} ${item.description || ""}`.toLowerCase();
       const source = shortSource(item);
+      // 比較・対決記事は各社の方式と論点を具体的に書く（テンプレ回避・深掘り）
+      const titleTickers = findTickers(item.title);
+      if (titleTickers.length >= 2) {
+        const named = titleTickers.slice(0, 3).map(companyDesc).join(" と ");
+        return `${named} を比較する記事。方式が違えば強みも違う——イオントラップは高忠実度・全結合、超伝導は高速で量子ビットを増やしやすい、アニーリングは最適化特化。勝敗は「忠実度」「量子ビット数」「商用提供の広さ」「資金力」のどの軸で測るかで結論が変わる。下の比較欄でIonQの勝ち負けを整理した。`;
+      }
       if (/larger drop than the general market|drop than the general market|underperform|suffers a larger drop|market: key/.test(text)) {
         return `${source}は、IonQ株が市場全体より大きく下げたことを取り上げている。これは新しい契約や技術発表というより、短期の株価変動を説明するタイプの記事。読むべき点は「下落の理由がIonQ固有の悪材料なのか、市場全体のリスクオフなのか」。`;
       }
@@ -1083,24 +1101,32 @@
       return tickerText;
     }
 
-    function relatedTickers(item) {
-      const text = `${item.title || ""} ${item.description || ""} ${item.source || ""}`.toLowerCase();
-      const pairs = [
-        { ticker: "$IONQ", patterns: [/ionq|ion q|イオンキュー/] },
-        { ticker: "$RGTI", patterns: [/rigetti|リゲッティ/] },
-        { ticker: "$QBTS", patterns: [/d-wave|dwave|d wave|ディーウェーブ/] },
-        { ticker: "$QUBT", patterns: [/quantum computing inc|quantum computing incorporated|\bqubt\b/] },
-        { ticker: "$IBM", patterns: [/\bibm\b/] },
-        { ticker: "$GOOGL", patterns: [/google|alphabet|グーグル/] },
-        { ticker: "$MSFT", patterns: [/microsoft|azure|マイクロソフト/] },
-        { ticker: "$AMZN", patterns: [/amazon|aws|braket|アマゾン/] },
-        { ticker: "$HON", patterns: [/honeywell|quantinuum|ハネウェル/] },
-        { ticker: "$NVDA", patterns: [/nvidia|cuda-q|エヌビディア/] }
-      ];
+    // 社名だけでなくティッカー記号（RGTI/QBTS等）も拾う。見出しに
+    // 「QBTS or RGTI」のように記号で書かれるケースが多いため。
+    const TICKER_PAIRS = [
+      { ticker: "$IONQ", patterns: [/ionq|ion q|イオンキュー|\bionq\b/] },
+      { ticker: "$RGTI", patterns: [/rigetti|リゲッティ|\brgti\b/] },
+      { ticker: "$QBTS", patterns: [/d-wave|dwave|d wave|ディーウェーブ|\bqbts\b/] },
+      { ticker: "$QUBT", patterns: [/quantum computing inc|quantum computing incorporated|\bqubt\b/] },
+      { ticker: "$IBM", patterns: [/\bibm\b/] },
+      { ticker: "$GOOGL", patterns: [/google|alphabet|グーグル|\bgoogl?\b/] },
+      { ticker: "$MSFT", patterns: [/microsoft|azure|マイクロソフト|\bmsft\b/] },
+      { ticker: "$AMZN", patterns: [/amazon|aws|braket|アマゾン|\bamzn\b/] },
+      { ticker: "$HON", patterns: [/honeywell|quantinuum|ハネウェル|\bhon\b/] },
+      { ticker: "$NVDA", patterns: [/nvidia|cuda-q|エヌビディア|\bnvda\b/] }
+    ];
+
+    function findTickers(text) {
+      const lower = String(text || "").toLowerCase();
       const found = [];
-      pairs.forEach(({ ticker, patterns }) => {
-        if (patterns.some(pattern => pattern.test(text)) && !found.includes(ticker)) found.push(ticker);
+      TICKER_PAIRS.forEach(({ ticker, patterns }) => {
+        if (patterns.some(pattern => pattern.test(lower)) && !found.includes(ticker)) found.push(ticker);
       });
+      return found;
+    }
+
+    function relatedTickers(item) {
+      const found = findTickers(`${item.title || ""} ${item.description || ""} ${item.source || ""}`);
       if (!found.includes("$IONQ")) found.unshift("$IONQ");
       return found.slice(0, 5);
     }
@@ -1129,11 +1155,96 @@
       return "★★★★★".slice(0, score) + "☆☆☆☆☆".slice(0, 5 - score);
     }
 
-    function comparisonForIonQ(view, title = "", item = {}) {
-      const text = title.toLowerCase();
-      if (item.type === "CIRS") {
-        return "IonQとの比較は、相手が技術・顧客・資金力のどこを伸ばしたかだけを見る。";
+    // 各社の方式と立ち位置（ニュース内容を具体化するための基礎情報）
+    const COMPANY_INFO = {
+      "$IONQ": { name: "IonQ", tech: "イオントラップ方式" },
+      "$RGTI": { name: "Rigetti", tech: "超伝導方式・小型純粋持株" },
+      "$QBTS": { name: "D-Wave", tech: "量子アニーリング方式" },
+      "$QUBT": { name: "Quantum Computing Inc", tech: "光方式・小型" },
+      "$IBM": { name: "IBM", tech: "超伝導方式・最大手" },
+      "$GOOGL": { name: "Google", tech: "超伝導方式・誤り訂正研究" },
+      "$MSFT": { name: "Microsoft", tech: "Azure基盤＋トポロジカル方式" },
+      "$AMZN": { name: "Amazon", tech: "Braket基盤＋自社ハード" },
+      "$HON": { name: "Quantinuum(Honeywell系)", tech: "イオントラップ方式・直接競合" },
+      "$NVDA": { name: "NVIDIA", tech: "GPU/CUDA-Q（補完）" }
+    };
+
+    // IonQが各競合に対して「勝っている点／負けている点」。比較欄で具体的に書くための知識。
+    const IONQ_VS = {
+      "$RGTI": {
+        win: "2量子ビットゲート忠実度の高さ、全結合(all-to-all)接続、AWS/Azure/Google Cloudの3大クラウド提供",
+        lose: "ゲート速度（処理クロック）は超伝導のRigettiが速い。量子ビット数の拡張ペースも超伝導が有利",
+        note: "方式違い（IonQ=イオントラップ／Rigetti=超伝導）。どちらも小型・赤字先行のピュアプレイ"
+      },
+      "$QBTS": {
+        win: "ゲート型の汎用機で任意アルゴリズムに対応、忠実度の高さ",
+        lose: "D-Waveはアニーリングで“今使える”最適化案件と実売上を持ち、短期の商用実績では先行",
+        note: "土俵が違う（IonQ=ゲート型汎用／D-Wave=最適化特化のアニーリング）。直接比較は要注意"
+      },
+      "$QUBT": {
+        win: "実機性能・クラウド提供・顧客実績で大きく先行",
+        lose: "目立った劣勢なし（QUBTは規模が小さく実証段階）",
+        note: "Quantum Computing Incは光方式で時価総額・実績ともに小さい"
+      },
+      "$IBM": {
+        win: "1量子ビットあたりの忠実度・全結合で質的に優位",
+        lose: "量子ビット数・ロードマップ規模・研究開発費・Qiskitエコシステムは巨人IBMが圧倒",
+        note: "IBM=超伝導の最大手。物量で先行、IonQは質で対抗"
+      },
+      "$GOOGL": {
+        win: "3大クラウドでの商用提供と高い忠実度",
+        lose: "誤り訂正の研究成果(Willow等)と研究開発費はGoogleが先行",
+        note: "Google=超伝導＋誤り訂正研究で先端。資金力で大差"
+      },
+      "$MSFT": {
+        win: "実機を“今”使える（Microsoftのトポロジカル方式はまだ初期段階）",
+        lose: "Azureというプラットフォーム支配力と資金力では及ばない",
+        note: "Microsoftは基盤(Azure)＋トポロジカル。IonQはAzure上の提供パートナーでもある"
+      },
+      "$AMZN": {
+        win: "実機をBraketで提供、高い忠実度",
+        lose: "AWSの基盤力と自社ハード投資の体力では及ばない",
+        note: "Amazonは基盤(Braket)＋自社ハード。IonQはBraket上の提供パートナーでもある"
+      },
+      "$HON": {
+        win: "上場企業としてクラウド経由で誰でも使える点",
+        lose: "同じイオントラップ方式の最強ライバル。Quantinuumは資金力と一部ベンチマークで先行",
+        note: "Quantinuum=IonQと同方式の直接競合。最も比較されるべき相手"
+      },
+      "$NVDA": {
+        win: "—（競合ではなく補完）",
+        lose: "—",
+        note: "NVIDIAはGPU/CUDA-Qで量子古典ハイブリッドや高速シミュレーションを担う。競合よりパートナー寄り"
       }
+    };
+
+    function companyDesc(ticker) {
+      const info = COMPANY_INFO[ticker];
+      return info ? `${info.name}（${info.tech}）` : ticker;
+    }
+
+    // 記事タイトル等に出てくる競合（IonQ以外でIONQ_VSに定義のある銘柄）
+    function rivalCompanies(item) {
+      return findTickers(`${item.title || ""} ${item.description || ""}`)
+        .filter(ticker => ticker !== "$IONQ" && IONQ_VS[ticker]);
+    }
+
+    function comparisonForIonQ(view, title = "", item = {}) {
+      // 具体的な競合が分かるなら「勝ち/負け」をはっきり書く
+      const rivals = rivalCompanies(item);
+      if (rivals.length) {
+        return rivals.slice(0, 3).map(ticker => {
+          const v = IONQ_VS[ticker];
+          const name = COMPANY_INFO[ticker].name;
+          if (v.win === "—") {
+            return `▼IonQ vs ${name}（${ticker}）\n・関係：競合ではなく補完。${v.note}`;
+          }
+          return `▼IonQ vs ${name}（${ticker}）\n・IonQが勝っている点：${v.win}\n・IonQが負けている点：${v.lose}\n・前提：${v.note}`;
+        }).join("\n\n");
+      }
+
+      // 具体的な競合が特定できない場合のフォールバック
+      const text = title.toLowerCase();
       if (/ion trap|trapped ion|ion-trap|イオントラップ/.test(text) && /laser|レーザー/.test(text)) {
         return "IonQもイオントラップ方式を使うため、レーザー制御や光学部品の小型化はかなり近いテーマ。ただしこの記事がIonQの採用や契約を示すわけではない。$IONQ にとっては、同方式の装置が商用化しやすくなる追い風として見るのが自然。";
       }
@@ -1230,7 +1341,7 @@
       const text = `${title} ${item.description || ""}`.toLowerCase();
       const source = shortSource(item);
 
-      if (/ibm|google|microsoft|amazon|aws|rigetti|d-wave|quantinuum|pasqal|quera|atom computing/.test(text)) return {
+      if (/ibm|google|alphabet|microsoft|azure|amazon|aws|braket|rigetti|rgti|d-wave|dwave|qbts|quantum computing inc|qubt|quantinuum|honeywell|\bhon\b|pasqal|quera|atom computing|nvidia|nvda/.test(text)) return {
         label: "競合動向",
         lead: `${source}が量子コンピューター関連で${quoteTitle(title)}を報道。`,
         body: "IonQだけでなく、量子業界全体の競争環境を動かす材料。競合が性能、顧客、クラウド提供、資金力のどこを伸ばしたかで意味が変わる。",
@@ -1444,7 +1555,8 @@
     setInterval(() => {
       state.seconds -= 1;
       if (state.seconds <= 0) refresh();
-      els.countdown.textContent = `次回 ${Math.max(0, state.seconds)}秒`;
+      const s = Math.max(0, state.seconds);
+      els.countdown.textContent = `次回 ${s >= 60 ? `${Math.ceil(s / 60)}分` : `${s}秒`}`;
     }, 1000);
 
     refresh();

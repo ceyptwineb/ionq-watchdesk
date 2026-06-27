@@ -4,6 +4,7 @@ const SEC_CIK = "0001824920";
 const COMPETITOR_TICKERS = ["RGTI", "QBTS", "QUBT", "IBM", "GOOGL", "MSFT", "AMZN", "HON", "NVDA"];
 const STORE_NAME = "ionq-watchdesk";
 const STATE_KEY = "watch-state";
+const POSTED_KEY = "posted-state";
 const DEFAULT_LOOKBACK_MINUTES = 1440;
 const SITE_URL = (process.env.WATCHDESK_URL || "https://ionqnews.netlify.app/").trim();
 
@@ -30,7 +31,7 @@ exports.handler = async (event = {}) => {
     const data = await collectLatest();
     const items = normalizeLatestItems(data);
     const state = await readState();
-    const postedIds = new Set(state.postedIds || []);
+    const postedIds = new Set([...(state.postedIds || []), ...(await readPostedIds())]);
     const notifiedIds = new Set(state.notifiedIds || []);
 
     if (event.queryStringParameters && event.queryStringParameters.debug === "1") {
@@ -47,10 +48,13 @@ exports.handler = async (event = {}) => {
           publishedAt: item.publishedAt,
           acceptedAt: item.acceptedAt,
           notify: !postedIds.has(item.id) &&
+            !postedIds.has(item.postedId) &&
             !notifiedIds.has(item.id) &&
             !isLowSignalSec(item) &&
             shouldNotifyByTime(item, startedAt),
           reason: notificationReason(item, startedAt, postedIds, notifiedIds),
+          id: item.id,
+          postedId: item.postedId,
           url: item.url
         }))
       });
@@ -70,6 +74,7 @@ exports.handler = async (event = {}) => {
 
     const fresh = items.filter((item) =>
       !postedIds.has(item.id) &&
+      !postedIds.has(item.postedId) &&
       !notifiedIds.has(item.id) &&
       !isLowSignalSec(item) &&
       shouldNotifyByTime(item, startedAt)
@@ -283,9 +288,10 @@ function normalizeLatestItems(data) {
   const items = [];
 
   data.sec.filter(isImportantSec).forEach((item) => items.push(withId({
+    type: "SEC",
     title: `SEC ${item.form}: ${item.description}`,
     url: item.url,
-    source: "SEC",
+    source: "SEC EDGAR",
     kind: "SEC開示",
     form: item.form,
     description: item.description,
@@ -295,24 +301,27 @@ function normalizeLatestItems(data) {
   })));
 
   data.officialNews.forEach((item) => items.push(withId({
+    type: "IR",
     title: item.title,
     url: item.url,
-    source: item.source || "IonQ IR / Google News",
+    source: item.source || "IonQ IR",
     kind: "IR・提携",
     publishedAt: item.publishedAt,
     notes: `公式IR系の最新候補\n公開時刻: ${item.publishedAt || "要確認"}`
   })));
 
   data.marketNews.forEach((item) => items.push(withId({
+    type: "NEWS",
     title: item.title,
     url: item.url,
-    source: item.source || "Google News",
+    source: item.source || "News",
     kind: "株価材料",
     publishedAt: item.publishedAt,
     notes: `市場ニュースの最新候補\n公開時刻: ${item.publishedAt || "要確認"}`
   })));
 
   (data.quantumNews || []).forEach((item) => items.push(withId({
+    type: "QNEWS",
     title: item.title,
     url: item.url,
     source: item.source || "Quantum News",
@@ -322,6 +331,7 @@ function normalizeLatestItems(data) {
   })));
 
   (data.competitorSec || []).forEach((item) => items.push(withId({
+    type: "CIRS",
     title: `${item.ticker || "競合"} SEC ${item.form}: ${item.description}`,
     url: item.url,
     source: `${item.ticker || "競合"} SEC`,
@@ -334,6 +344,7 @@ function normalizeLatestItems(data) {
   })));
 
   (data.competitorNews || []).forEach((item) => items.push(withId({
+    type: "CIRS",
     title: item.title,
     url: item.url,
     source: item.source || "Competitor IR",
@@ -343,6 +354,7 @@ function normalizeLatestItems(data) {
   })));
 
   (data.xPosts || []).forEach((item) => items.push(withId({
+    type: "X",
     title: item.title,
     url: item.url,
     source: item.source || "X",
@@ -362,7 +374,8 @@ function normalizeLatestItems(data) {
 function withId(item) {
   return {
     ...item,
-    id: crypto.createHash("sha256").update(dedupeBasis(item)).digest("hex")
+    id: crypto.createHash("sha256").update(dedupeBasis(item)).digest("hex"),
+    postedId: frontendItemId(item)
   };
 }
 
@@ -382,6 +395,13 @@ function normalizeSignature(text) {
     .replace(/\s+-\s+[^-|]+$/g, "")
     .replace(/[\s　]+/g, " ")
     .trim();
+}
+
+function frontendItemId(item) {
+  const basis = item.form
+    ? `${item.type}|${item.url || ""}`
+    : `${item.type}|${normalizeSignature(item.title)}|${item.source || ""}`;
+  return encodeURIComponent(basis).slice(0, 500);
 }
 
 function isLowSignalSec(item) {
@@ -420,7 +440,7 @@ function shouldNotifyByTime(item, nowValue) {
 }
 
 function notificationReason(item, nowValue, postedIds, notifiedIds) {
-  if (postedIds.has(item.id)) return "posted";
+  if (postedIds.has(item.id) || postedIds.has(item.postedId)) return "posted";
   if (notifiedIds.has(item.id)) return "already_notified";
   if (isLowSignalSec(item)) return "low_signal_sec";
   const itemTime = parseItemTime(item);
@@ -588,6 +608,19 @@ async function readState() {
       postedIds: [],
       storageUnavailable: true
     };
+  }
+}
+
+async function readPostedIds() {
+  try {
+    const store = await openStore();
+    const value = await store.get(POSTED_KEY);
+    if (!value) return [];
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed.ids) ? parsed.ids : [];
+  } catch (error) {
+    console.warn("Could not read posted state. Continuing without posted filter.", error.message);
+    return [];
   }
 }
 
