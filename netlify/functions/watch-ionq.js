@@ -4,7 +4,7 @@ const SEC_CIK = "0001824920";
 const COMPETITOR_TICKERS = ["RGTI", "QBTS", "QUBT", "IBM", "GOOGL", "MSFT", "AMZN", "HON", "NVDA"];
 const STORE_NAME = "ionq-watchdesk";
 const STATE_KEY = "watch-state";
-const DEFAULT_LOOKBACK_MINUTES = 180;
+const DEFAULT_LOOKBACK_MINUTES = 1440;
 
 exports.handler = async (event = {}) => {
   const startedAt = new Date().toISOString();
@@ -30,6 +30,42 @@ exports.handler = async (event = {}) => {
     const state = await readState();
     const postedIds = new Set(state.postedIds || []);
     const notifiedIds = new Set(state.notifiedIds || []);
+
+    if (event.queryStringParameters && event.queryStringParameters.debug === "1") {
+      return json(200, {
+        ok: true,
+        checkedAt: startedAt,
+        webhookConfigured: Boolean(getDiscordWebhookUrl()),
+        lookbackMinutes: effectiveLookbackMinutes(),
+        totalItems: items.length,
+        items: items.slice(0, 30).map((item) => ({
+          title: item.title,
+          kind: item.kind,
+          source: item.source,
+          publishedAt: item.publishedAt,
+          acceptedAt: item.acceptedAt,
+          notify: !postedIds.has(item.id) &&
+            !notifiedIds.has(item.id) &&
+            !isLowSignalSec(item) &&
+            shouldNotifyByTime(item, startedAt),
+          reason: notificationReason(item, startedAt, postedIds, notifiedIds),
+          url: item.url
+        }))
+      });
+    }
+
+    if (event.queryStringParameters && event.queryStringParameters.test === "current") {
+      const item = items.find((entry) => !isLowSignalSec(entry));
+      if (!item) return json(200, { ok: false, result: "no_items_to_test" });
+      await sendNotification(item, 1, { requireTarget: true });
+      return json(200, {
+        ok: true,
+        result: "current_item_test_sent",
+        item: item.title,
+        webhookConfigured: Boolean(getDiscordWebhookUrl())
+      });
+    }
+
     const fresh = items.filter((item) =>
       !postedIds.has(item.id) &&
       !notifiedIds.has(item.id) &&
@@ -49,7 +85,7 @@ exports.handler = async (event = {}) => {
         checkedAt: startedAt,
         totalItems: items.length,
         webhookConfigured: Boolean(getDiscordWebhookUrl()),
-        lookbackMinutes: Number(process.env.WATCH_LOOKBACK_MINUTES || DEFAULT_LOOKBACK_MINUTES)
+        lookbackMinutes: effectiveLookbackMinutes()
       });
     }
 
@@ -357,10 +393,34 @@ function shouldNotifyByTime(item, nowValue) {
   if (Number.isFinite(baseline) && itemTime <= baseline) return false;
 
   const now = Date.parse(nowValue);
-  const lookbackMinutes = Number(process.env.WATCH_LOOKBACK_MINUTES || DEFAULT_LOOKBACK_MINUTES);
+  const lookbackMinutes = effectiveLookbackMinutes();
   const oldestAllowed = now - lookbackMinutes * 60 * 1000;
 
   return itemTime >= oldestAllowed && itemTime <= now + 2 * 60 * 1000;
+}
+
+function notificationReason(item, nowValue, postedIds, notifiedIds) {
+  if (postedIds.has(item.id)) return "posted";
+  if (notifiedIds.has(item.id)) return "already_notified";
+  if (isLowSignalSec(item)) return "low_signal_sec";
+  const itemTime = parseItemTime(item);
+  if (!itemTime) return "no_valid_time";
+  const baseline = process.env.WATCH_BASELINE_AT
+    ? Date.parse(process.env.WATCH_BASELINE_AT)
+    : Date.parse("2026-06-19T15:05:00+09:00");
+  if (Number.isFinite(baseline) && itemTime <= baseline) return "before_baseline";
+  const now = Date.parse(nowValue);
+  const lookbackMinutes = effectiveLookbackMinutes();
+  const oldestAllowed = now - lookbackMinutes * 60 * 1000;
+  if (itemTime < oldestAllowed) return "older_than_lookback";
+  if (itemTime > now + 2 * 60 * 1000) return "future_time";
+  return "will_notify";
+}
+
+function effectiveLookbackMinutes() {
+  const configured = Number(process.env.WATCH_LOOKBACK_MINUTES || DEFAULT_LOOKBACK_MINUTES);
+  if (!Number.isFinite(configured) || configured <= 0) return DEFAULT_LOOKBACK_MINUTES;
+  return Math.max(configured, DEFAULT_LOOKBACK_MINUTES);
 }
 
 function parseItemTime(item) {
