@@ -5,6 +5,7 @@ const COMPETITOR_TICKERS = ["RGTI", "QBTS", "QUBT", "IBM", "GOOGL", "MSFT", "AMZ
 const STORE_NAME = "ionq-watchdesk";
 const STATE_KEY = "watch-state";
 const DEFAULT_LOOKBACK_MINUTES = 1440;
+const SITE_URL = (process.env.WATCHDESK_URL || "https://dynamic-praline-de62f0.netlify.app/").trim();
 
 exports.handler = async (event = {}) => {
   const startedAt = new Date().toISOString();
@@ -360,8 +361,26 @@ function normalizeLatestItems(data) {
 function withId(item) {
   return {
     ...item,
-    id: crypto.createHash("sha256").update(`${item.url || ""}|${item.title || ""}`).digest("hex")
+    id: crypto.createHash("sha256").update(dedupeBasis(item)).digest("hex")
   };
+}
+
+// 通知の重複防止に使う安定キー。
+// SEC等の提出書類はaccessionを含むURLが固定なのでURLを使う。
+// ニュースはGoogle NewsのリンクがトラッキングトークンでブレるためURLを使わず、
+// 正規化したタイトル+ソースを使う（同じ記事を再通知しないため）。
+function dedupeBasis(item) {
+  if (item.form) return `filing|${item.url || item.title || ""}`;
+  return `news|${normalizeSignature(`${item.title || ""}|${item.source || ""}`)}`;
+}
+
+function normalizeSignature(text) {
+  return String(text)
+    .toLowerCase()
+    .replace(/https?:\/\/\S+/g, "")
+    .replace(/\s+-\s+[^-|]+$/g, "")
+    .replace(/[\s　]+/g, " ")
+    .trim();
 }
 
 function isLowSignalSec(item) {
@@ -459,15 +478,50 @@ async function sendDiscord(item, title) {
   const webhookUrl = getDiscordWebhookUrl();
   if (!webhookUrl) throw new Error("DISCORD_WEBHOOK_URL is empty.");
 
+  const jst = formatJst(item.acceptedAt || item.publishedAt);
+  const hasUrl = /^https?:\/\//i.test(String(item.url || ""));
+  const descriptionLines = [
+    item.source ? `**${item.source}**` : null,
+    jst ? `🕒 ${jst}` : null,
+    `🔗 [Watchdeskを開く](${SITE_URL})`
+  ].filter(Boolean);
+
+  const embed = {
+    title: truncate(item.title, 240),
+    url: hasUrl ? item.url : undefined,
+    description: descriptionLines.join("\n"),
+    color: 0x2458c6
+  };
+
   const response = await fetch(webhookUrl, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      content: `**${title}**\n${item.title}\n${item.source || ""} ${item.publishedAt || ""}\n${item.url}`
+      content: `**${title}**`,
+      embeds: [embed]
     })
   });
 
   if (!response.ok) throw new Error(`Discord webhook failed: ${response.status}`);
+}
+
+function formatJst(value) {
+  if (!value) return "";
+  const ms = Date.parse(value);
+  if (!Number.isFinite(ms)) return "";
+  return new Intl.DateTimeFormat("ja-JP", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(new Date(ms)) + " JST";
+}
+
+function truncate(text, max) {
+  const value = String(text || "");
+  return value.length > max ? `${value.slice(0, max - 1)}…` : value;
 }
 
 function getDiscordWebhookUrl() {
