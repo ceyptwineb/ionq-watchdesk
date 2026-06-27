@@ -604,7 +604,7 @@
       const sourceUrl = /^https?:\/\//i.test(String(item.url || "")) ? `\n${item.url}` : "";
       const title = cleanTitle(item.title);
       const reportTitle = titleForReport(item, view);
-      const comparison = ["QNEWS", "CIRS"].includes(item.type) ? `\n\nイオンキューとの比較：\n${comparisonForIonQ(view, title, item)}` : "";
+      const comparison = ["QNEWS", "CIRS"].includes(item.type) ? `\n\nIonQとの比較：\n${comparisonForIonQ(view, title, item)}` : "";
       const draft = `${reportTitle}\n${headlineFor(item, view)}\n\n要点：\n${eventLine(item, view, title)}\n\nニュース内容：\n${newsExplanation(item, view, title)}\n\n読み解き：\n${termExplanation(view, title)}\n\nどれくらい凄い？：\n${whyBig(item, view, title)}\n${comparison}\n\n評価：\n・凄さ：${importanceStars(item, view)}\n・株価影響：${stockStars(item, view)}\n・関連銘柄： ${tickerLine(item, view)}\n\n結論：\n${conclusionFor(item, view)}\n\n出典：${shortSource(item)}${sourceUrl}`;
       return fitXLimit(draft);
     }
