@@ -134,6 +134,21 @@
       margin-top: 4px;
     }
 
+    .toplane { margin: 0 0 12px; }
+    .toplane .lane-head { border-top: 3px solid var(--dark); }
+    .toplist { max-height: 320px; }
+
+    .badge {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 999px;
+      background: #eef2f8;
+      color: var(--blue);
+      margin-right: 5px;
+    }
+
     .feeds {
       display: grid;
       grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -383,9 +398,14 @@
     <div class="headline">
       <div>
         <h2>最新速報</h2>
-        <p>カードを選ぶと投稿作成欄へ送られます</p>
+        <p>カードを選ぶと投稿作成欄へ送られます・時刻はすべて日本時間(JST)</p>
       </div>
     </div>
+
+    <section class="lane toplane" data-type="NEW">
+      <div class="lane-head"><h2>新着ニュース（未投稿が上）</h2><span class="count" id="countNEW">0件</span></div>
+      <div class="lane-list toplist" id="feedNEW"><div class="empty">取得中...</div></div>
+    </section>
 
     <main class="feeds" id="feeds">
       <section class="lane" data-type="IR">
@@ -531,7 +551,75 @@
 
     function renderAll() {
       ["IR", "SEC", "NEWS", "QNEWS", "CIRS", "X"].forEach(type => renderLane(type));
+      renderTopFeed();
       if (!state.selected) selectLatest("IR");
+    }
+
+    const TYPE_BADGE = { IR: "IR", SEC: "SEC", NEWS: "ニュース", QNEWS: "量子", CIRS: "競合", X: "X" };
+
+    function buildTopFeed() {
+      const all = ["IR", "SEC", "NEWS", "QNEWS", "CIRS", "X"].flatMap(type => state.entries[type]);
+      const seen = new Set();
+      const unique = [];
+      all.forEach(item => {
+        const key = `${item.url || ""}|${item.title || ""}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        unique.push(item);
+      });
+      const ts = item => Date.parse(item.publishedAt || item.filingDate || 0) || 0;
+      const isPosted = item => state.posted.has(itemId(item));
+      return unique.sort((a, b) => {
+        const pa = isPosted(a) ? 1 : 0;
+        const pb = isPosted(b) ? 1 : 0;
+        if (pa !== pb) return pa - pb;     // 未投稿を上へ
+        return ts(b) - ts(a);              // 新しい順
+      });
+    }
+
+    function renderTopFeed() {
+      const list = document.getElementById("feedNEW");
+      const entries = buildTopFeed();
+      state.topEntries = entries;
+      const unposted = entries.filter(item => !state.posted.has(itemId(item))).length;
+      document.getElementById("countNEW").textContent = `未投稿 ${unposted}件 / 全${entries.length}件`;
+
+      if (!entries.length) {
+        list.innerHTML = `<div class="empty">該当する最新情報はありません</div>`;
+        return;
+      }
+
+      list.innerHTML = entries.slice(0, 30).map(item => {
+        const id = itemId(item);
+        const selected = state.selected && itemId(state.selected) === id;
+        const badge = TYPE_BADGE[item.type] || item.type;
+        return `<article class="story ${selected ? "selected" : ""} ${state.posted.has(id) ? "posted" : ""}">
+          <button class="story-main" data-top="${id}" type="button">
+            <span class="story-meta"><span><span class="badge">${badge}</span>${escapeHtml(item.source)}</span><span>${formatDate(item.publishedAt || item.filingDate)}</span></span>
+            <span class="story-title">${escapeHtml(item.title)}</span>
+          </button>
+          <label class="feed-posted"><input type="checkbox" data-top-posted="${id}" ${state.posted.has(id) ? "checked" : ""}> 投稿済み</label>
+        </article>`;
+      }).join("");
+
+      list.querySelectorAll("[data-top]").forEach(button => {
+        button.addEventListener("click", () => {
+          const item = state.topEntries.find(candidate => itemId(candidate) === button.dataset.top);
+          if (item) selectItem(item);
+        });
+      });
+
+      list.querySelectorAll("[data-top-posted]").forEach(checkbox => {
+        checkbox.addEventListener("change", () => {
+          const id = checkbox.dataset.topPosted;
+          if (checkbox.checked) state.posted.add(id);
+          else state.posted.delete(id);
+          localStorage.setItem("ionq_posted_v2", JSON.stringify([...state.posted]));
+          if (state.selected && itemId(state.selected) === id) els.postedCheck.checked = checkbox.checked;
+          ["IR", "SEC", "NEWS", "QNEWS", "CIRS", "X"].forEach(renderLane);
+          renderTopFeed();
+        });
+      });
     }
 
     function renderLane(type) {
@@ -572,6 +660,7 @@
           localStorage.setItem("ionq_posted_v2", JSON.stringify([...state.posted]));
           if (state.selected && itemId(state.selected) === id) els.postedCheck.checked = checkbox.checked;
           renderLane(type);
+          renderTopFeed();
         });
       });
     }
@@ -591,6 +680,7 @@
       els.selected.innerHTML = `<strong>${escapeHtml(shortTitle(item.title, 90))}</strong><span>${escapeHtml(item.source)} / ${item.confidence}</span>`;
       els.postedCheck.checked = state.posted.has(itemId(item));
       ["IR", "SEC", "NEWS", "QNEWS", "CIRS", "X"].forEach(renderLane);
+      renderTopFeed();
     }
 
     function generateDraft() {
@@ -1098,7 +1188,8 @@
     function formatDate(value) {
       const date = new Date(value);
       if (Number.isNaN(date.getTime())) return value || "";
-      return date.toLocaleString("ja-JP", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+      // 米国時間で来る配信時刻を、閲覧環境に関係なく日本時間(JST)で表示する
+      return date.toLocaleString("ja-JP", { timeZone: "Asia/Tokyo", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
     }
 
     function escapeHtml(value) {
@@ -1121,7 +1212,7 @@
         if (data.error) throw new Error(data.message || data.error);
         normalize(data);
         renderAll();
-        els.lastUpdated.textContent = `更新 ${formatDate(data.updatedAt || new Date())}`;
+        els.lastUpdated.textContent = `更新 ${formatDate(data.updatedAt || new Date())} JST`;
         state.seconds = REFRESH_SECONDS;
       } catch (error) {
         els.error.textContent = `最新情報を取得できません: ${error.message}`;
@@ -1152,6 +1243,7 @@
       else state.posted.delete(id);
       localStorage.setItem("ionq_posted_v2", JSON.stringify([...state.posted]));
       renderLane(state.selected.type);
+      renderTopFeed();
     });
 
     document.getElementById("openXButton").addEventListener("click", async () => {
