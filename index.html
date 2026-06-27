@@ -1107,29 +1107,13 @@
     }
 
     function importanceStars(item, view) {
-      const bump = factBump(item).imp;
-      const score = clamp(scoreForImportance(item, view) + bump, 1, 5);
-      const reasons = {
-        5: "会社や業界の前提を変え得る材料。",
-        4: "事業評価にかなり効く可能性がある材料。",
-        3: "注目材料だが、数字や続報の確認が必要。",
-        2: "参考情報。直接の事業インパクトは限定的。",
-        1: "薄い材料。話題として扱う程度。"
-      };
-      return `${stars(score)} ${score}/5｜${reasons[score]}${bump > 0 ? "（金額・規模を加味）" : ""}`;
+      const score = clamp(scoreForImportance(item, view) + factBump(item).imp, 1, 5);
+      return `${stars(score)} ${score}/5`;
     }
 
     function stockStars(item, view) {
-      const bump = factBump(item).stock;
-      const score = clamp(scoreForStock(item, view) + bump, 1, 5);
-      const reasons = {
-        5: "株価を大きく動かす可能性が高い。",
-        4: "短期でも中期でも材料視されやすい。",
-        3: "反応はあり得るが、一次情報や数字次第。",
-        2: "株価影響は限定的になりやすい。",
-        1: "株価材料としては弱い。"
-      };
-      return `${stars(score)} ${score}/5｜${reasons[score]}${bump > 0 ? "（数字を加味）" : ""}`;
+      const score = clamp(scoreForStock(item, view) + factBump(item).stock, 1, 5);
+      return `${stars(score)} ${score}/5`;
     }
 
     function tickerLine(item, view) {
