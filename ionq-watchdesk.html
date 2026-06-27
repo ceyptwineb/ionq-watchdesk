@@ -407,33 +407,6 @@
       <div class="lane-list toplist" id="feedNEW"><div class="empty">取得中...</div></div>
     </section>
 
-    <main class="feeds" id="feeds">
-      <section class="lane" data-type="IR">
-        <div class="lane-head"><h2>最新IR</h2><span class="count" id="countIR">0件</span></div>
-        <div class="lane-list" id="feedIR"><div class="empty">取得中...</div></div>
-      </section>
-      <section class="lane" data-type="SEC">
-        <div class="lane-head"><h2>重要SEC</h2><span class="count" id="countSEC">0件</span></div>
-        <div class="lane-list" id="feedSEC"><div class="empty">取得中...</div></div>
-      </section>
-      <section class="lane" data-type="NEWS">
-        <div class="lane-head"><h2>IONQニュース</h2><span class="count" id="countNEWS">0件</span></div>
-        <div class="lane-list" id="feedNEWS"><div class="empty">取得中...</div></div>
-      </section>
-      <section class="lane" data-type="QNEWS">
-        <div class="lane-head"><h2>量子業界</h2><span class="count" id="countQNEWS">0件</span></div>
-        <div class="lane-list" id="feedQNEWS"><div class="empty">取得中...</div></div>
-      </section>
-      <section class="lane" data-type="CIRS">
-        <div class="lane-head"><h2>競合IR/SEC</h2><span class="count" id="countCIRS">0件</span></div>
-        <div class="lane-list" id="feedCIRS"><div class="empty">取得中...</div></div>
-      </section>
-      <section class="lane" data-type="X">
-        <div class="lane-head"><h2>公式X</h2><span class="count" id="countX">0件</span></div>
-        <div class="lane-list" id="feedX"><div class="empty">取得中...</div></div>
-      </section>
-    </main>
-
     <div class="error" id="errorBox"></div>
 
     <section class="composer">
@@ -462,10 +435,37 @@
         </div>
       </div>
     </section>
+
+    <main class="feeds" id="feeds">
+      <section class="lane" data-type="IR">
+        <div class="lane-head"><h2>最新IR</h2><span class="count" id="countIR">0件</span></div>
+        <div class="lane-list" id="feedIR"><div class="empty">取得中...</div></div>
+      </section>
+      <section class="lane" data-type="SEC">
+        <div class="lane-head"><h2>重要SEC</h2><span class="count" id="countSEC">0件</span></div>
+        <div class="lane-list" id="feedSEC"><div class="empty">取得中...</div></div>
+      </section>
+      <section class="lane" data-type="NEWS">
+        <div class="lane-head"><h2>IONQニュース</h2><span class="count" id="countNEWS">0件</span></div>
+        <div class="lane-list" id="feedNEWS"><div class="empty">取得中...</div></div>
+      </section>
+      <section class="lane" data-type="QNEWS">
+        <div class="lane-head"><h2>量子業界</h2><span class="count" id="countQNEWS">0件</span></div>
+        <div class="lane-list" id="feedQNEWS"><div class="empty">取得中...</div></div>
+      </section>
+      <section class="lane" data-type="CIRS">
+        <div class="lane-head"><h2>競合IR/SEC</h2><span class="count" id="countCIRS">0件</span></div>
+        <div class="lane-list" id="feedCIRS"><div class="empty">取得中...</div></div>
+      </section>
+      <section class="lane" data-type="X">
+        <div class="lane-head"><h2>公式X</h2><span class="count" id="countX">0件</span></div>
+        <div class="lane-list" id="feedX"><div class="empty">取得中...</div></div>
+      </section>
+    </main>
   </div>
 
   <script>
-    const PUBLIC_API = "https://dynamic-praline-de62f0.netlify.app/.netlify/functions/latest-ionq";
+    const PUBLIC_API = "https://ionqnews.netlify.app/.netlify/functions/latest-ionq";
     const LOCAL_VIEW = location.protocol === "file:" || ["localhost", "127.0.0.1"].includes(location.hostname);
     const API_URL = LOCAL_VIEW ? PUBLIC_API : "/.netlify/functions/latest-ionq";
     const REFRESH_SECONDS = 60;
