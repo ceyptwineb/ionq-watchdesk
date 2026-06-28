@@ -285,7 +285,7 @@
     <aside class="side">
       <div class="brand">
         <h1>IONQ Watchdesk</h1>
-        <p>情報収集と投稿元ネタ管理</p>
+        <p>48時間以内の情報収集と投稿元ネタ管理</p>
       </div>
       <div class="status-box">
         <div id="version">version: clean-collector-20260629</div>
@@ -324,6 +324,7 @@
         <div class="card">
           <h3>運用メモ</h3>
           <div class="muted">このサイトは集計が主役。レポート作成はGPTsに任せます。</div>
+          <div class="muted">古い記事は自動で落とし、48時間以内の情報だけを表示します。</div>
           <div class="muted">投稿済みチェックは「元ネタに対して投稿したか」を管理するために使います。</div>
         </div>
       </div>
@@ -333,6 +334,7 @@
   <script>
     const APP_VERSION = "clean-collector-20260629";
     const PUBLIC_ORIGIN = "https://ionqrnews.netlify.app";
+    const MAX_ITEM_AGE_HOURS = 48;
     const isLocalPreview = location.protocol === "file:" || location.hostname === "127.0.0.1" || location.hostname === "localhost";
     const API = isLocalPreview ? PUBLIC_ORIGIN : "";
     const latestEndpoint = API + "/.netlify/functions/latest-ionq";
@@ -422,6 +424,7 @@
       addRows(rows, data.competitorNews, "competitor", "競合NEWS", "CNEWS");
       return rows
         .filter(function (item) { return item.title || item.url; })
+        .filter(function (item) { return isFreshItem(item); })
         .sort(function (a, b) {
           return Date.parse(b.publishedAt || b.acceptedAt || 0) - Date.parse(a.publishedAt || a.acceptedAt || 0);
         });
@@ -540,23 +543,10 @@
 
     function buildGptsText(item) {
       return [
-        "以下の記事URLを読んで、IonQ/量子業界の投資家向けに日本語レポートを作成してください。",
-        "",
-        "分類: " + (item.label || item.type || ""),
-        "タイトル: " + (item.title || ""),
-        "出典: " + (item.source || ""),
-        "公開時刻: " + (formatTime(item.publishedAt) || ""),
-        item.form ? "SEC form: " + item.form : "",
-        item.ticker ? "ticker: " + item.ticker : "",
-        "",
-        "URL:",
         item.url || "",
-        "",
-        "条件:",
-        "- 必ずURL先の記事本文を読んでください",
-        "- 本文にない数字は捏造しないでください",
-        "- IonQとの関係、競合比較、株価材料としての見方を具体的に書いてください",
-        "- X長文投稿向けにしてください"
+        "title: " + (item.title || ""),
+        "source: " + (item.source || ""),
+        "type: " + (item.label || item.type || "")
       ].filter(Boolean).join("\n");
     }
 
@@ -693,6 +683,13 @@
         hash = Math.imul(hash, 16777619);
       }
       return "i" + (hash >>> 0).toString(16);
+    }
+
+    function isFreshItem(item) {
+      const value = item.publishedAt || item.acceptedAt || item.filingDate || item.reportDate || "";
+      const ms = Date.parse(value);
+      if (!Number.isFinite(ms)) return true;
+      return Date.now() - ms <= MAX_ITEM_AGE_HOURS * 60 * 60 * 1000;
     }
 
     function formatTime(value) {
