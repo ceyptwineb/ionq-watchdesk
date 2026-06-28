@@ -6,1677 +6,782 @@
   <title>IONQ Watchdesk</title>
   <style>
     :root {
-      --bg: #f4f6f8;
-      --panel: #fff;
-      --ink: #18202a;
-      --muted: #647080;
-      --line: #d9dee6;
-      --blue: #2458c6;
-      --green: #16845b;
-      --red: #bd3d43;
-      --amber: #a56a13;
-      --violet: #7047a8;
-      --teal: #0f766e;
-      --dark: #17202b;
+      --bg: #f6f7f4;
+      --panel: #ffffff;
+      --line: #d9ded6;
+      --text: #17201b;
+      --muted: #68736c;
+      --accent: #0d766e;
+      --accent-soft: #dff2ee;
+      --warn: #9b5a00;
+      --danger: #a23434;
+      --good: #167046;
+      --shadow: 0 10px 24px rgba(20, 34, 28, .08);
     }
 
     * { box-sizing: border-box; }
-
     body {
       margin: 0;
-      color: var(--ink);
       background: var(--bg);
-      font-family: "Segoe UI", "Noto Sans JP", system-ui, sans-serif;
+      color: var(--text);
+      font-family: "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
+      font-size: 14px;
+      line-height: 1.55;
     }
 
-    button, select, textarea { font: inherit; }
-    button { cursor: pointer; }
-    a { color: inherit; }
-
-    .shell {
-      width: min(1440px, 100%);
-      margin: 0 auto;
-      padding: 16px;
+    button, input, textarea, select {
+      font: inherit;
     }
 
-    header {
+    button {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 8px 11px;
+      cursor: pointer;
+    }
+
+    button:hover { border-color: var(--accent); }
+    button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+      font-weight: 700;
+    }
+    button:disabled {
+      opacity: .55;
+      cursor: not-allowed;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 390px minmax(0, 1fr);
+    }
+
+    .feed {
+      border-right: 1px solid var(--line);
+      background: #fbfcfa;
+      min-width: 0;
       display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 16px;
-      padding: 4px 0 14px;
+      flex-direction: column;
+      height: 100vh;
+      position: sticky;
+      top: 0;
+    }
+
+    .feed-head {
+      padding: 14px 14px 10px;
       border-bottom: 1px solid var(--line);
+      display: grid;
+      gap: 10px;
     }
 
     .brand {
       display: flex;
+      justify-content: space-between;
       align-items: center;
       gap: 10px;
     }
 
-    .mark {
-      width: 36px;
-      height: 36px;
-      display: grid;
-      place-items: center;
-      border-radius: 7px;
-      color: #fff;
-      background: var(--dark);
-      font-weight: 800;
+    .brand h1 {
+      margin: 0;
+      font-size: 18px;
+      letter-spacing: 0;
     }
-
-    h1, h2, h3, p { margin: 0; }
-    h1 { font-size: 19px; }
-    h2 { font-size: 16px; }
-    h3 { font-size: 14px; line-height: 1.45; }
 
     .status {
-      display: flex;
-      align-items: center;
-      gap: 10px;
       color: var(--muted);
       font-size: 12px;
-      flex-wrap: wrap;
-      justify-content: flex-end;
     }
 
-    .live {
-      display: inline-flex;
-      align-items: center;
+    .tabs {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
       gap: 6px;
-      color: var(--green);
+    }
+
+    .tab {
+      padding: 7px 4px;
+      font-size: 12px;
+      text-align: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .tab.active {
+      background: var(--accent-soft);
+      border-color: var(--accent);
+      color: #064d47;
       font-weight: 700;
     }
 
-    .dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--green);
+    .tools {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 8px;
     }
 
-    .icon-btn, .btn {
-      min-height: 36px;
+    .search {
       border: 1px solid var(--line);
-      border-radius: 7px;
+      border-radius: 6px;
+      padding: 8px 10px;
       background: #fff;
-      color: var(--ink);
-      padding: 7px 11px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
+      min-width: 0;
+    }
+
+    .items {
+      overflow: auto;
+      padding: 10px;
+      display: grid;
+      gap: 8px;
+    }
+
+    .item {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      display: grid;
       gap: 7px;
     }
 
-    .btn.primary {
-      color: #fff;
-      border-color: var(--blue);
-      background: var(--blue);
+    .item.active {
+      border-color: var(--accent);
+      box-shadow: var(--shadow);
     }
 
-    .btn.dark {
-      color: #fff;
-      border-color: var(--dark);
-      background: var(--dark);
+    .item-title {
+      font-weight: 700;
+      line-height: 1.45;
+      overflow-wrap: anywhere;
     }
 
-    .headline {
+    .meta {
       display: flex;
-      justify-content: space-between;
-      align-items: end;
-      gap: 12px;
-      padding: 16px 0 10px;
-    }
-
-    .headline p {
+      flex-wrap: wrap;
+      gap: 6px;
       color: var(--muted);
       font-size: 12px;
-      margin-top: 4px;
     }
-
-    .toplane { margin: 0 0 12px; }
-    .toplane .lane-head { border-top: 3px solid var(--dark); }
-    .toplist { max-height: 320px; }
 
     .badge {
-      display: inline-block;
-      font-size: 10px;
-      font-weight: 700;
-      padding: 1px 6px;
+      border: 1px solid var(--line);
       border-radius: 999px;
-      background: #eef2f8;
-      color: var(--blue);
-      margin-right: 5px;
+      padding: 1px 7px;
+      background: #f7f8f5;
     }
 
-    .feeds {
-      display: grid;
-      grid-template-columns: repeat(6, minmax(0, 1fr));
+    .item-actions {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
       gap: 10px;
-      align-items: start;
     }
 
-    .lane {
+    .posted {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      user-select: none;
+    }
+
+    .detail {
       min-width: 0;
+      padding: 18px;
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr);
+      gap: 14px;
+      height: 100vh;
+    }
+
+    .selected {
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 8px;
-      overflow: hidden;
+      padding: 14px;
+      display: grid;
+      gap: 10px;
     }
 
-    .lane-head {
+    .selected h2 {
+      margin: 0;
+      font-size: 19px;
+      line-height: 1.4;
+      overflow-wrap: anywhere;
+    }
+
+    .selected-row {
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
-      justify-content: space-between;
-      min-height: 43px;
-      padding: 10px 12px;
-      border-bottom: 1px solid var(--line);
-    }
-
-    .lane[data-type="IR"] .lane-head { border-top: 3px solid var(--blue); }
-    .lane[data-type="SEC"] .lane-head { border-top: 3px solid var(--red); }
-    .lane[data-type="NEWS"] .lane-head { border-top: 3px solid var(--amber); }
-    .lane[data-type="QNEWS"] .lane-head { border-top: 3px solid var(--teal); }
-    .lane[data-type="CIRS"] .lane-head { border-top: 3px solid var(--green); }
-    .lane[data-type="X"] .lane-head { border-top: 3px solid var(--violet); }
-
-    .count {
-      color: var(--muted);
-      font-size: 11px;
-    }
-
-    .lane-list {
-      display: grid;
-      max-height: 440px;
-      overflow: auto;
-    }
-
-    .story {
-      border-bottom: 1px solid #edf0f4;
-      background: #fff;
-      min-height: 96px;
-      display: grid;
-      width: 100%;
-      color: var(--ink);
-    }
-
-    .story:hover, .story.selected { background: #f0f5ff; }
-    .story.posted { opacity: .5; }
-
-    .story-main {
-      appearance: none;
-      border: 0;
-      background: transparent;
-      text-align: left;
-      padding: 11px 12px 7px;
-      display: grid;
-      gap: 6px;
-      width: 100%;
-      color: var(--ink);
-    }
-
-    .story-meta {
-      display: flex;
-      justify-content: space-between;
       gap: 8px;
-      color: var(--muted);
-      font-size: 11px;
     }
 
-    .story-title {
-      display: -webkit-box;
-      -webkit-line-clamp: 3;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
-      font-size: 13px;
-      line-height: 1.45;
-      font-weight: 650;
+    .read-box {
+      background: #f9faf7;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      display: grid;
+      gap: 8px;
     }
 
-    .feed-posted {
-      margin: 0 10px 9px auto;
-      display: inline-flex;
+    .read-ok { color: var(--good); font-weight: 700; }
+    .read-ng { color: var(--danger); font-weight: 700; }
+
+    .report-area {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 300px;
+      gap: 14px;
+    }
+
+    .draft-panel, .side-panel {
+      min-height: 0;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+
+    .panel-head {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 12px;
+      display: flex;
+      justify-content: space-between;
       align-items: center;
-      gap: 5px;
-      color: var(--muted);
-      font-size: 11px;
-      cursor: pointer;
+      gap: 10px;
     }
 
-    .feed-posted input { width: 15px; height: 15px; margin: 0; }
+    .panel-head strong { font-size: 14px; }
+
+    textarea {
+      width: 100%;
+      height: 100%;
+      min-height: 380px;
+      resize: none;
+      border: 0;
+      padding: 14px;
+      outline: 0;
+      line-height: 1.65;
+      background: #fff;
+      color: var(--text);
+    }
+
+    .side-content {
+      padding: 12px;
+      overflow: auto;
+      display: grid;
+      align-content: start;
+      gap: 12px;
+    }
+
+    .metric {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      background: #fbfcfa;
+    }
+
+    .metric b { display: block; margin-bottom: 4px; }
+    .metric span { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 
     .empty {
-      padding: 18px 12px;
+      padding: 22px;
       color: var(--muted);
-      font-size: 12px;
-      line-height: 1.5;
+      text-align: center;
     }
 
-    .composer {
-      display: grid;
-      grid-template-columns: minmax(280px, .72fr) minmax(0, 1.28fr);
-      gap: 12px;
-      margin-top: 14px;
+    .warn {
+      color: var(--warn);
+      font-weight: 700;
     }
 
-    .controls, .draft {
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: var(--panel);
-      padding: 14px;
-    }
-
-    .controls { display: grid; gap: 12px; align-content: start; }
-
-    label {
-      display: block;
-      color: var(--muted);
-      font-size: 12px;
-      margin-bottom: 6px;
-    }
-
-    select, textarea {
-      width: 100%;
-      border: 1px solid var(--line);
-      border-radius: 7px;
-      background: #fff;
-      color: var(--ink);
-      padding: 9px 10px;
-    }
-
-    select { min-height: 40px; }
-
-    .selected-story {
-      border-left: 3px solid var(--blue);
-      padding: 9px 10px;
-      background: #f7f9fc;
-      min-height: 74px;
-    }
-
-    .selected-story span {
-      display: block;
-      color: var(--muted);
-      font-size: 11px;
-      margin-top: 4px;
-    }
-
-    .control-actions, .draft-actions {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    .draft {
-      color: #f4f7fb;
-      background: var(--dark);
-      border-color: var(--dark);
-      display: grid;
-      gap: 10px;
-    }
-
-    .draft-head {
-      display: flex;
-      justify-content: space-between;
-      gap: 10px;
-      align-items: center;
-    }
-
-    .draft-head span { color: #aeb8c5; font-size: 12px; }
-
-    textarea#draftText {
-      min-height: 255px;
-      resize: vertical;
-      color: #f8fafc;
-      border-color: #3a4654;
-      background: #111821;
-      line-height: 1.55;
-    }
-
-    .draft .btn { border-color: #485563; background: #24303d; color: #fff; }
-    .draft .btn.primary { border-color: #4e78e8; background: #315fcf; }
-
-    .posted-check {
-      min-height: 36px;
-      margin: 0;
-      padding: 7px 10px;
-      display: inline-flex;
-      align-items: center;
-      gap: 7px;
-      border: 1px solid #485563;
-      border-radius: 7px;
-      color: #fff;
-      background: #24303d;
-      cursor: pointer;
-    }
-
-    .posted-check input { width: 17px; height: 17px; margin: 0; }
-
-    .error {
-      display: none;
-      margin-top: 10px;
-      padding: 10px;
-      border: 1px solid #edb6ba;
-      border-radius: 7px;
-      color: #8f272e;
-      background: #fff4f4;
-      font-size: 12px;
-    }
-
-    @media (max-width: 1100px) {
-      .feeds { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    }
-
-    @media (max-width: 700px) {
-      .shell { padding: 10px; }
-      header, .headline { align-items: flex-start; }
-      header { flex-direction: column; }
-      .status { justify-content: flex-start; }
-      .feeds, .composer { grid-template-columns: 1fr; }
-      .lane-list { max-height: 310px; }
-      textarea#draftText { min-height: 220px; }
+    @media (max-width: 900px) {
+      .app { grid-template-columns: 1fr; }
+      .feed {
+        position: static;
+        height: auto;
+        max-height: 58vh;
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+      .detail {
+        height: auto;
+        min-height: 70vh;
+        padding: 12px;
+      }
+      .report-area { grid-template-columns: 1fr; }
+      .side-panel { grid-template-rows: auto auto; }
+      textarea { min-height: 420px; }
     }
   </style>
 </head>
 <body>
-  <div class="shell">
-    <header>
-      <div class="brand">
-        <div class="mark">IQ</div>
-        <div>
+  <main class="app">
+    <section class="feed">
+      <div class="feed-head">
+        <div class="brand">
           <h1>IONQ Watchdesk</h1>
-          <p>速報・一次情報・投稿作成</p>
+          <span id="updated" class="status">起動中</span>
+        </div>
+        <div class="tabs" id="tabs"></div>
+        <div class="tools">
+          <input id="search" class="search" type="search" placeholder="検索">
+          <button id="reload" title="更新">更新</button>
         </div>
       </div>
-      <div class="status">
-        <span class="live"><i class="dot"></i>自動更新中</span>
-        <span id="lastUpdated">未更新</span>
-        <span id="countdown">次回 5分</span>
-        <button class="icon-btn" id="refreshButton" type="button">更新</button>
-      </div>
-    </header>
-
-    <div class="headline">
-      <div>
-        <h2>最新速報</h2>
-        <p>カードを選ぶと投稿作成欄へ送られます・時刻はすべて日本時間(JST)</p>
-      </div>
-    </div>
-
-    <section class="lane toplane" data-type="NEW">
-      <div class="lane-head"><h2>新着ニュース（未投稿が上）</h2><span class="count" id="countNEW">0件</span></div>
-      <div class="lane-list toplist" id="feedNEW"><div class="empty">取得中...</div></div>
+      <div id="items" class="items"></div>
     </section>
 
-    <div class="error" id="errorBox"></div>
+    <section class="detail">
+      <div id="selected" class="selected">
+        <div class="empty">左の速報を選ぶと、記事本文を読んで深掘りレポートを作れます。</div>
+      </div>
 
-    <section class="composer">
-      <div class="controls">
-        <h2>投稿作成</h2>
-        <div>
-          <label>選択中</label>
-          <div class="selected-story" id="selectedStory">最新情報を取得しています</div>
-        </div>
-        <div class="control-actions">
-          <button class="btn primary" id="chatgptButton" type="button">ChatGPTで作成（無料）</button>
-          <button class="btn" id="generateButton" type="button">投稿案を作成</button>
-          <button class="btn" id="openSourceButton" type="button">出典を開く</button>
+      <div class="read-box">
+        <div id="readStatus" class="status">本文取得はまだ実行していません。</div>
+        <div class="selected-row">
+          <button id="testRead">本文取得テスト</button>
+          <button id="makeReport" class="primary">深掘りレポート生成</button>
+          <button id="copyDraft">コピー</button>
+          <button id="openX">Xで開く</button>
         </div>
       </div>
 
-      <div class="draft">
-        <div class="draft-head">
-          <h2>投稿案</h2>
-          <span id="charCount">長文X 0 / 25000</span>
-        </div>
-        <textarea id="draftText" aria-label="投稿案" placeholder="情報を選んで投稿案を作成"></textarea>
-        <div class="draft-actions">
-          <button class="btn" id="copyButton" type="button">コピー</button>
-          <label class="posted-check"><input id="postedCheck" type="checkbox"> 投稿済み</label>
-          <button class="btn primary" id="openXButton" type="button">コピーしてX</button>
-        </div>
+      <div class="report-area">
+        <section class="draft-panel">
+          <div class="panel-head">
+            <strong>投稿案</strong>
+            <span id="charCount" class="status">0文字</span>
+          </div>
+          <textarea id="draft" placeholder="ここにAIレポートが入ります。"></textarea>
+        </section>
+
+        <aside class="side-panel">
+          <div class="panel-head">
+            <strong>確認</strong>
+            <span id="aiStatus" class="status">待機中</span>
+          </div>
+          <div class="side-content">
+            <div class="metric">
+              <b>本文取得</b>
+              <span id="articleMetric">未確認</span>
+            </div>
+            <div class="metric">
+              <b>運用ルール</b>
+              <span>記事本文が取れた時だけ生成。取れない記事は薄い作文を作らず止めます。</span>
+            </div>
+            <div class="metric">
+              <b>投稿済み</b>
+              <span>左のチェックは元ネタ単位で保存します。PCとスマホで共有される場合があります。</span>
+            </div>
+          </div>
+        </aside>
       </div>
     </section>
-
-    <main class="feeds" id="feeds">
-      <section class="lane" data-type="IR">
-        <div class="lane-head"><h2>最新IR</h2><span class="count" id="countIR">0件</span></div>
-        <div class="lane-list" id="feedIR"><div class="empty">取得中...</div></div>
-      </section>
-      <section class="lane" data-type="SEC">
-        <div class="lane-head"><h2>重要SEC</h2><span class="count" id="countSEC">0件</span></div>
-        <div class="lane-list" id="feedSEC"><div class="empty">取得中...</div></div>
-      </section>
-      <section class="lane" data-type="NEWS">
-        <div class="lane-head"><h2>IONQニュース</h2><span class="count" id="countNEWS">0件</span></div>
-        <div class="lane-list" id="feedNEWS"><div class="empty">取得中...</div></div>
-      </section>
-      <section class="lane" data-type="QNEWS">
-        <div class="lane-head"><h2>量子業界</h2><span class="count" id="countQNEWS">0件</span></div>
-        <div class="lane-list" id="feedQNEWS"><div class="empty">取得中...</div></div>
-      </section>
-      <section class="lane" data-type="CIRS">
-        <div class="lane-head"><h2>競合IR/SEC</h2><span class="count" id="countCIRS">0件</span></div>
-        <div class="lane-list" id="feedCIRS"><div class="empty">取得中...</div></div>
-      </section>
-      <section class="lane" data-type="X">
-        <div class="lane-head"><h2>公式X</h2><span class="count" id="countX">0件</span></div>
-        <div class="lane-list" id="feedX"><div class="empty">取得中...</div></div>
-      </section>
-    </main>
-  </div>
+  </main>
 
   <script>
     const PUBLIC_ORIGIN = "https://ionqrnews.netlify.app";
-    const PUBLIC_API = `${PUBLIC_ORIGIN}/.netlify/functions/latest-ionq`;
-    const LOCAL_VIEW = location.protocol === "file:" || ["localhost", "127.0.0.1"].includes(location.hostname);
-    const API_URL = LOCAL_VIEW ? PUBLIC_API : "/.netlify/functions/latest-ionq";
-    // 「投稿済み」状態を端末間で共有する保存API
-    const POSTED_API = LOCAL_VIEW ? `${PUBLIC_ORIGIN}/.netlify/functions/posted` : "/.netlify/functions/posted";
-    // AIでレポート生成するAPI。失敗時は従来のテンプレ生成にフォールバック
-    const REPORT_API = LOCAL_VIEW ? `${PUBLIC_ORIGIN}/.netlify/functions/report` : "/.netlify/functions/report";
-    const REFRESH_SECONDS = 300;   // 自動更新は5分間隔（関数呼び出し＝Netlify使用量を抑える）。手動更新はいつでも可
+    const API = location.protocol === "file:" ? PUBLIC_ORIGIN : "";
+    const CATEGORIES = [
+      { id: "all", label: "全部" },
+      { id: "ir", label: "最新IR" },
+      { id: "sec", label: "重要SEC" },
+      { id: "news", label: "IONQ NEWS" },
+      { id: "quantum", label: "量子業界" },
+      { id: "competitor", label: "競合" }
+    ];
+
     const state = {
-      entries: { IR: [], SEC: [], NEWS: [], QNEWS: [], CIRS: [], X: [] },
-      selected: null,
-      seconds: REFRESH_SECONDS,
-      xStatus: "manual",
-      posted: new Set(JSON.parse(localStorage.getItem("ionq_posted_v2") || "[]"))
+      items: [],
+      posted: new Set(loadLocalPosted()),
+      category: "all",
+      query: "",
+      selectedId: "",
+      latestArticle: null
     };
 
     const els = {
-      lastUpdated: document.getElementById("lastUpdated"),
-      countdown: document.getElementById("countdown"),
-      error: document.getElementById("errorBox"),
-      selected: document.getElementById("selectedStory"),
-      draft: document.getElementById("draftText"),
+      tabs: document.getElementById("tabs"),
+      items: document.getElementById("items"),
+      updated: document.getElementById("updated"),
+      search: document.getElementById("search"),
+      reload: document.getElementById("reload"),
+      selected: document.getElementById("selected"),
+      testRead: document.getElementById("testRead"),
+      makeReport: document.getElementById("makeReport"),
+      copyDraft: document.getElementById("copyDraft"),
+      openX: document.getElementById("openX"),
+      draft: document.getElementById("draft"),
       charCount: document.getElementById("charCount"),
-      postedCheck: document.getElementById("postedCheck")
+      readStatus: document.getElementById("readStatus"),
+      aiStatus: document.getElementById("aiStatus"),
+      articleMetric: document.getElementById("articleMetric")
     };
 
-    function importantSec(item) {
-      const form = String(item.form || "").toUpperCase();
-      const description = String(item.description || "").toUpperCase();
-      if (["3", "4", "5", "144"].includes(form)) return false;
-      if (description.includes("OWNERSHIP")) return false;
-      return /8-K|10-Q|10-K|S-3|424B|DEF 14A|PRE 14A|SC 13|13D|13G/.test(form) ||
-        /PROSPECTUS|CURRENT REPORT|QUARTERLY|ANNUAL/.test(description);
+    init();
+
+    function init() {
+      renderTabs();
+      bindEvents();
+      loadPostedFromServer();
+      refresh();
+      setInterval(refresh, 60000);
     }
 
-    function itemId(item) {
-      // 端末・時間が変わっても同じ記事は同じIDになるよう安定キーにする。
-      // SEC等(formあり)はaccession付きURLが固定なのでURL、ニュースはリンクが
-      // 変動するため正規化タイトル+ソースを使う。
-      const basis = item.form
-        ? `${item.type}|${item.url || ""}`
-        : `${item.type}|${normalizeSig(item.title)}|${item.source || ""}`;
-      return encodeURIComponent(basis).slice(0, 500);
-    }
-
-    function normalizeSig(text) {
-      return String(text || "")
-        .toLowerCase()
-        .replace(/https?:\/\/\S+/g, "")
-        .replace(/\s+-\s+[^-|]+$/g, "")
-        .replace(/[\s　]+/g, " ")
-        .trim();
-    }
-
-    function persistPostedLocal() {
-      localStorage.setItem("ionq_posted_v2", JSON.stringify([...state.posted]));
-    }
-
-    // チェックの更新：ローカル即時保存＋サーバーへ同期（失敗してもローカルは保持）
-    function setPosted(id, posted) {
-      if (posted) state.posted.add(id);
-      else state.posted.delete(id);
-      persistPostedLocal();
-      fetch(POSTED_API, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id, posted })
-      }).catch(() => {});
-    }
-
-    // サーバーの投稿済み状態を読み込み、画面・ローカルに反映（端末間同期）
-    async function loadPosted() {
-      try {
-        const res = await fetch(POSTED_API, { cache: "no-store" });
-        if (!res.ok) return;
-        const data = await res.json();
-        const serverIds = new Set(data.ids || []);
-        // オフライン中にこの端末だけで付けた分は残しつつ、サーバーを正とする
-        const localOnly = [...state.posted].filter(id => !serverIds.has(id));
-        state.posted = new Set(serverIds);
-        localOnly.forEach(id => state.posted.add(id));
-        persistPostedLocal();
-        if (localOnly.length) {
-          fetch(POSTED_API, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ addIds: localOnly })
-          }).catch(() => {});
-        }
-      } catch (error) {
-        // オフライン等：localStorageのみで継続
-      }
-    }
-
-    function normalize(data) {
-      state.entries.IR = (data.officialNews || []).map(item => ({
-        ...item, type: "IR", confidence: "一次情報候補", source: item.source || "IonQ IR"
-      }));
-
-      state.entries.SEC = (data.sec || []).filter(importantSec).map(item => ({
-        ...item, type: "SEC", title: `${item.form}｜${secLabel(item)}`, source: "SEC EDGAR", confidence: "一次情報",
-        publishedAt: item.acceptedAt || item.filingDate
-      }));
-
-      state.entries.NEWS = (data.marketNews || []).map(item => ({
-        ...item, type: "NEWS", confidence: "報道", source: item.source || "News"
-      }));
-
-      state.entries.QNEWS = (data.quantumNews || []).map(item => ({
-        ...item, type: "QNEWS", confidence: "業界報道", source: item.source || "Quantum News"
-      }));
-
-      const competitorSec = (data.competitorSec || []).map(item => ({
-        ...item,
-        type: "CIRS",
-        title: `${item.ticker || "競合"} ${item.form}｜${secLabel(item)}`,
-        source: `${item.ticker || "競合"} SEC`,
-        confidence: "競合一次情報",
-        publishedAt: item.acceptedAt || item.filingDate
-      }));
-      const competitorNews = (data.competitorNews || []).map(item => ({
-        ...item,
-        type: "CIRS",
-        confidence: "競合報道",
-        source: item.source || "Competitor IR"
-      }));
-      state.entries.CIRS = [...competitorSec, ...competitorNews]
-        .sort((a, b) => Date.parse(b.publishedAt || b.filingDate || 0) - Date.parse(a.publishedAt || a.filingDate || 0));
-
-      state.entries.X = [];
-      state.xStatus = "manual";
-    }
-
-    function secLabel(item) {
-      const form = String(item.form || "").toUpperCase();
-      if (form === "8-K") return "臨時重要開示";
-      if (form === "10-Q") return "四半期報告書";
-      if (form === "10-K") return "年次報告書";
-      if (form.includes("S-3") || form.includes("424B")) return "資金調達・目論見書";
-      if (form.includes("13D") || form.includes("13G") || form.includes("SC 13")) return "大口保有報告";
-      return item.description || "SEC開示";
-    }
-
-    function renderAll() {
-      ["IR", "SEC", "NEWS", "QNEWS", "CIRS", "X"].forEach(type => renderLane(type));
-      renderTopFeed();
-      if (!state.selected) selectLatest("IR");
-    }
-
-    const TYPE_BADGE = { IR: "IR", SEC: "SEC", NEWS: "ニュース", QNEWS: "量子", CIRS: "競合", X: "X" };
-
-    function buildTopFeed() {
-      const all = ["IR", "SEC", "NEWS", "QNEWS", "CIRS", "X"].flatMap(type => state.entries[type]);
-      const seen = new Set();
-      const unique = [];
-      all.forEach(item => {
-        const key = `${item.url || ""}|${item.title || ""}`;
-        if (seen.has(key)) return;
-        seen.add(key);
-        unique.push(item);
+    function bindEvents() {
+      els.reload.addEventListener("click", refresh);
+      els.search.addEventListener("input", () => {
+        state.query = els.search.value.trim().toLowerCase();
+        renderItems();
       });
-      const ts = item => Date.parse(item.publishedAt || item.filingDate || 0) || 0;
-      const isPosted = item => state.posted.has(itemId(item));
-      return unique.sort((a, b) => {
-        const pa = isPosted(a) ? 1 : 0;
-        const pb = isPosted(b) ? 1 : 0;
-        if (pa !== pb) return pa - pb;     // 未投稿を上へ
-        return ts(b) - ts(a);              // 新しい順
-      });
+      els.testRead.addEventListener("click", testArticleRead);
+      els.makeReport.addEventListener("click", makeReport);
+      els.copyDraft.addEventListener("click", copyDraft);
+      els.openX.addEventListener("click", openX);
+      els.draft.addEventListener("input", updateCharCount);
     }
 
-    function renderTopFeed() {
-      const list = document.getElementById("feedNEW");
-      const entries = buildTopFeed();
-      state.topEntries = entries;
-      const unposted = entries.filter(item => !state.posted.has(itemId(item))).length;
-      document.getElementById("countNEW").textContent = `未投稿 ${unposted}件 / 全${entries.length}件`;
-
-      if (!entries.length) {
-        list.innerHTML = `<div class="empty">該当する最新情報はありません</div>`;
-        return;
-      }
-
-      list.innerHTML = entries.slice(0, 30).map(item => {
-        const id = itemId(item);
-        const selected = state.selected && itemId(state.selected) === id;
-        const badge = TYPE_BADGE[item.type] || item.type;
-        return `<article class="story ${selected ? "selected" : ""} ${state.posted.has(id) ? "posted" : ""}">
-          <button class="story-main" data-top="${id}" type="button">
-            <span class="story-meta"><span><span class="badge">${badge}</span>${escapeHtml(item.source)}</span><span>${formatDate(item.publishedAt || item.filingDate)}</span></span>
-            <span class="story-title">${escapeHtml(item.title)}</span>
-          </button>
-          <label class="feed-posted"><input type="checkbox" data-top-posted="${id}" ${state.posted.has(id) ? "checked" : ""}> 投稿済み</label>
-        </article>`;
-      }).join("");
-
-      list.querySelectorAll("[data-top]").forEach(button => {
+    function renderTabs() {
+      els.tabs.innerHTML = "";
+      CATEGORIES.forEach((cat) => {
+        const button = document.createElement("button");
+        button.className = "tab" + (cat.id === state.category ? " active" : "");
+        button.textContent = cat.label;
         button.addEventListener("click", () => {
-          const item = state.topEntries.find(candidate => itemId(candidate) === button.dataset.top);
-          if (item) selectItem(item);
+          state.category = cat.id;
+          renderTabs();
+          renderItems();
         });
+        els.tabs.appendChild(button);
       });
-
-      list.querySelectorAll("[data-top-posted]").forEach(checkbox => {
-        checkbox.addEventListener("change", () => {
-          const id = checkbox.dataset.topPosted;
-          setPosted(id, checkbox.checked);
-          if (state.selected && itemId(state.selected) === id) els.postedCheck.checked = checkbox.checked;
-          ["IR", "SEC", "NEWS", "QNEWS", "CIRS", "X"].forEach(renderLane);
-          renderTopFeed();
-        });
-      });
-    }
-
-    function renderLane(type) {
-      const list = document.getElementById(`feed${type}`);
-      const entries = state.entries[type].slice(0, 8);
-      document.getElementById(`count${type}`).textContent = type === "X" ? "無料" : `${entries.length}件`;
-
-      if (!entries.length) {
-        const message = type === "X" ? xStatusMessage() : "該当する最新情報はありません";
-        list.innerHTML = `<div class="empty">${message}</div>`;
-        return;
-      }
-
-      list.innerHTML = entries.map(item => {
-        const id = itemId(item);
-        const selected = state.selected && itemId(state.selected) === id;
-        return `<article class="story ${selected ? "selected" : ""} ${state.posted.has(id) ? "posted" : ""}">
-          <button class="story-main" data-entry="${id}" type="button">
-            <span class="story-meta"><span>${escapeHtml(item.source)}</span><span>${formatDate(item.publishedAt || item.filingDate)}</span></span>
-            <span class="story-title">${escapeHtml(item.title)}</span>
-          </button>
-          <label class="feed-posted"><input type="checkbox" data-feed-posted="${id}" ${state.posted.has(id) ? "checked" : ""}> 投稿済み</label>
-        </article>`;
-      }).join("");
-
-      list.querySelectorAll("[data-entry]").forEach(button => {
-        button.addEventListener("click", () => {
-          const item = state.entries[type].find(candidate => itemId(candidate) === button.dataset.entry);
-          if (item) selectItem(item);
-        });
-      });
-
-      list.querySelectorAll("[data-feed-posted]").forEach(checkbox => {
-        checkbox.addEventListener("change", () => {
-          const id = checkbox.dataset.feedPosted;
-          setPosted(id, checkbox.checked);
-          if (state.selected && itemId(state.selected) === id) els.postedCheck.checked = checkbox.checked;
-          renderLane(type);
-          renderTopFeed();
-        });
-      });
-    }
-
-    function xStatusMessage() {
-      const listUrl = "https://x.com/i/lists/2068093425489264980";
-      return `<a href="${listUrl}" target="_blank" rel="noreferrer">選定Xリストを開く</a><br><small>無料・X上で確認</small>`;
-    }
-
-    function selectLatest(type) {
-      const item = state.entries[type][0] || ["IR", "SEC", "NEWS", "QNEWS", "CIRS", "X"].flatMap(key => state.entries[key])[0];
-      if (item) selectItem(item);
-    }
-
-    function selectItem(item) {
-      state.selected = item;
-      els.selected.innerHTML = `<strong>${escapeHtml(shortTitle(item.title, 90))}</strong><span>${escapeHtml(item.source)} / ${item.confidence}</span>`;
-      els.postedCheck.checked = state.posted.has(itemId(item));
-      ["IR", "SEC", "NEWS", "QNEWS", "CIRS", "X"].forEach(renderLane);
-      renderTopFeed();
-    }
-
-    async function generateDraft() {
-      if (!state.selected) return;
-      const item = state.selected;
-      const btn = document.getElementById("generateButton");
-      const prevLabel = btn.textContent;
-      btn.disabled = true;
-      btn.textContent = "AI生成中…";
-      try {
-        const res = await fetch(REPORT_API, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(reportPayload(item))
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.ok && data.draft) {
-            els.draft.value = data.draft;
-            showReportStatus(data.article);
-            updateCount();
-            return;
-          }
-          showReportStatus(data.article, `AI生成停止: ${data.error || "記事本文を取得できませんでした"}`);
-          return;
-        }
-        showReportStatus(null, "AI生成停止: report APIに接続できませんでした");
-      } catch (error) {
-        showReportStatus(null, `AI生成停止: ${error.message}`);
-      } finally {
-        btn.disabled = false;
-        btn.textContent = prevLabel;
-      }
-    }
-
-    function showReportStatus(article, fallbackMessage = "") {
-      if (!els.error) return;
-      if (article && article.ok) {
-        els.error.textContent = `記事本文取得OK: ${article.method || "direct"}で約${article.chars || 0}文字を読んで生成`;
-        els.error.style.display = "block";
-        return;
-      }
-      if (article && !article.ok) {
-        els.error.textContent = `記事本文取得失敗: ${article.error || "unknown"}。本文が取れないためAI生成を止めました`;
-        els.error.style.display = "block";
-        return;
-      }
-      if (fallbackMessage) {
-        els.error.textContent = fallbackMessage;
-        els.error.style.display = "block";
-      }
-    }
-
-    function reportPayload(item) {
-      return {
-        type: item.type,
-        kind: item.kind || "",
-        source: item.source || "",
-        title: item.title || "",
-        description: item.description || "",
-        form: item.form || "",
-        url: item.url || "",
-        publishedAt: item.publishedAt || item.acceptedAt || item.filingDate || "",
-        confidence: item.confidence || ""
-      };
-    }
-
-    function buildDraft(item, priority) {
-      const view = analyze(item, priority);
-      const sourceUrl = /^https?:\/\//i.test(String(item.url || "")) ? `\n${item.url}` : "";
-      const title = cleanTitle(item.title);
-      const reportTitle = titleForReport(item, view);
-      // 見出しに含まれる具体的な数字・相手先を拾って前面に出す
-      const facts = extractFacts(item);
-      const factsBlock = facts.length ? `\n\n押さえる数字：\n${facts.map(f => `・${f}`).join("\n")}` : "";
-      const when = formatDate(item.publishedAt || item.acceptedAt || item.filingDate);
-      const metaLine = when ? `\n（${when} JST時点・${shortSource(item)}）` : "";
-      // QNEWS/CIRSに加え、具体的な競合が見出しに出ていれば比較欄を出す（NEWS型の「IonQ vs ○○」等）
-      const showComparison = ["QNEWS", "CIRS"].includes(item.type) || rivalCompanies(item).length > 0;
-      const comparison = showComparison ? `\n\nIonQとの比較：\n${comparisonForIonQ(view, title, item)}` : "";
-      // 英語見出しの日本語ハイライト（1行）
-      const summaryLine = `\nひとことで：${japaneseSummary(item, view, facts)}`;
-      // セクション統合：「読み解き」に用語解説＋注目度をまとめ、3→2セクションに
-      const insight = `${termExplanation(view, title)}\n${whyBig(item, view, title)}`;
-      const draft = `${reportTitle}\n${headlineFor(item, view)}${summaryLine}${metaLine}\n\n要点：\n${eventLine(item, view, title)}${factsBlock}\n\nニュース内容：\n${newsExplanation(item, view, title)}\n\n読み解き：\n${insight}${comparison}\n\n評価：\n・凄さ：${importanceStars(item, view)}\n・株価影響：${stockStars(item, view)}\n・関連銘柄： ${tickerLine(item, view)}\n\n結論：\n${conclusionFor(item, view)}\n\n出典：${shortSource(item)}${sourceUrl}`;
-      return fitXLimit(draft);
-    }
-
-    // 見出し・本文から定量的な事実（値動き・金額・量子ビット数・関係機関）を抽出
-    function extractFacts(item) {
-      const text = `${item.title || ""} ${item.description || ""}`;
-      const facts = [];
-
-      const pct = text.match(/([+-]?\d+(?:\.\d+)?)\s?%/);
-      if (pct) {
-        const n = pct[1].replace("+", "");
-        const up = /(jump|surg|soar|rally|rise|gain|rocket|pop|climb|grow|increase|up\b|上昇|急騰|高騰|増|伸)/i.test(text);
-        const down = /(fall|drop|plunge|slump|sink|slide|declin|tumble|crash|down\b|下落|急落|減)/i.test(text);
-        const dir = down && !up ? "減" : (up ? "増" : "変動");
-        if (/stock|shares|株価|株が/i.test(text)) {
-          facts.push(`株価${down && !up ? "下落" : "上昇"} ${n}%`);
-        } else if (/revenue|sales|bookings|backlog|growth|margin|売上|受注|成長|業績|利益/i.test(text)) {
-          facts.push(`業績${dir} ${n}%`);
-        } else {
-          facts.push(`変動 ${n}%`);
-        }
-      }
-
-      const money = text.match(/\$\s?\d[\d,]*(?:\.\d+)?\s?(?:billion|million|bn|b|m)?\b/gi);
-      if (money) money.slice(0, 2).forEach(m => facts.push(`金額 ${normalizeMoney(m)}`));
-
-      const qubit = text.match(/(\d[\d,]*)\s?-?\s?qubit/i);
-      if (qubit) facts.push(`量子ビット ${qubit[1]}`);
-
-      const orgs = [
-        [/air force|空軍/i, "米空軍"],
-        [/darpa/i, "DARPA"],
-        [/\bnasa\b/i, "NASA"],
-        [/department of defense|\bdod\b|pentagon|国防総省/i, "米国防総省"],
-        [/\bnist\b/i, "NIST"],
-        [/\bdoe\b|department of energy/i, "米エネルギー省"],
-        [/\barmy\b|陸軍/i, "米陸軍"],
-        [/\bnavy\b|海軍/i, "米海軍"]
-      ];
-      orgs.forEach(([re, label]) => {
-        if (re.test(text) && !facts.some(f => f.includes(label))) facts.push(`関係先 ${label}`);
-      });
-
-      // 比較・対決記事（例「QBTS or RGTI」「IonQ vs Rigetti」）の対象銘柄を拾う
-      const titleTickers = findTickers(item.title);
-      if (titleTickers.length >= 2 && /\bvs\.?\b|\bversus\b|\bor\b|対決|比較/i.test(item.title || "")) {
-        facts.push(`比較 ${titleTickers.slice(0, 3).join(" vs ")}`);
-      }
-
-      return facts;
-    }
-
-    function normalizeMoney(raw) {
-      const s = raw.replace(/\s+/g, "");
-      const num = parseFloat(s.replace(/[^\d.]/g, ""));
-      if (!isFinite(num)) return raw.trim();
-      const isB = /billion|bn|b$/i.test(s);
-      const isM = /million|m$/i.test(s);
-      let manUsd = null;
-      if (isB) manUsd = num * 100000;   // 1B = 100,000万ドル
-      else if (isM) manUsd = num * 100; // 1M = 100万ドル
-      if (manUsd == null) return `$${jpNum(num)}`;
-      const head = `$${jpNum(num)}${isB ? "B" : "M"}`;
-      if (manUsd >= 10000) return `${head}（約${jpNum(Math.round(manUsd / 10000 * 100) / 100)}億ドル）`;
-      return `${head}（約${jpNum(manUsd)}万ドル）`;
-    }
-
-    function jpNum(n) {
-      return Number.isInteger(n) ? n.toLocaleString("ja-JP") : n.toLocaleString("ja-JP", { maximumFractionDigits: 2 });
-    }
-
-    // 英語見出しを構造化要素から日本語1行に要約（完全翻訳ではなくハイライト）
-    function japaneseSummary(item, view, facts) {
-      const labelPhrase = {
-        "提携・契約": "提携・契約に関する話題", "M&A": "買収・合併の話題", "業績": "業績・決算の話題",
-        "株価": "株価変動の話題", "政府案件": "政府・国防案件の話題", "技術": "技術・性能の話題",
-        "市場評価": "アナリスト評価・目標株価の話題", "投資比較": "他の量子銘柄との比較", "資金調達": "資金調達の話題",
-        "大口保有": "大株主の保有動向", "競合動向": "競合の動向", "業界資金": "量子業界への資金流入",
-        "量子業界": "量子業界の話題", "公式発表": "IonQ公式発表", "SEC 8-K": "SEC 8-K（臨時重要開示）",
-        "SEC 10-Q": "SEC 10-Q（四半期報告）", "SEC 10-K": "SEC 10-K（年次報告）",
-        "競合SEC": "競合のSEC開示", "NEWS": "IonQ関連の報道", "SEC": "SEC開示"
-      }[view.label] || "IonQ関連の最新情報";
-      const subject = item.type === "IR" ? "IonQ公式" : (item.type === "SEC" ? "IonQ（SEC）" : shortSource(item));
-      const tail = facts.length ? `（${facts.join("、")}）` : "";
-      return `${subject}：${labelPhrase}${tail}`;
-    }
-
-    function clamp(value, min, max) {
-      return Math.max(min, Math.min(max, value));
-    }
-
-    // 抽出した数字・相手先の大きさで★を加点する（金額・値動き・政府案件・量子ビット数）
-    function factBump(item) {
-      const text = `${item.title || ""} ${item.description || ""}`;
-      let imp = 0;
-      let stock = 0;
-
-      const moneyMatch = text.match(/\$\s?\d[\d,]*(?:\.\d+)?\s?(?:billion|million|bn|b|m)?\b/i);
-      if (moneyMatch) {
-        const oku = moneyToOku(moneyMatch[0]);
-        if (oku >= 5) { imp += 2; stock += 2; }
-        else if (oku >= 1) { imp += 1; stock += 1; }
-        else { stock += 1; }
-      }
-
-      const pct = text.match(/([+-]?\d+(?:\.\d+)?)\s?%/);
-      if (pct) {
-        const v = Math.abs(parseFloat(pct[1]));
-        if (v >= 10) stock += 2;
-        else if (v >= 5) stock += 1;
-      }
-
-      if (/air force|darpa|\bnasa\b|department of (defense|energy)|\bdod\b|\bnist\b|pentagon|空軍|国防|陸軍|海軍/i.test(text)) {
-        imp += 1;
-      }
-
-      const qubit = text.match(/(\d[\d,]*)\s?-?\s?qubit/i);
-      if (qubit && parseInt(qubit[1].replace(/,/g, ""), 10) >= 100) imp += 1;
-
-      return { imp, stock };
-    }
-
-    function moneyToOku(raw) {
-      const s = raw.replace(/\s+/g, "");
-      const num = parseFloat(s.replace(/[^\d.]/g, ""));
-      if (!isFinite(num)) return 0;
-      if (/billion|bn|b$/i.test(s)) return num * 10;   // 1B = 10億ドル
-      if (/million|m$/i.test(s)) return num / 100;     // 100M = 1億ドル
-      return 0;
-    }
-
-    function titleForReport(item, view) {
-      if (item.type === "QNEWS") {
-        return view.label === "量子業界" ? "【量子業界】" : `【量子業界｜${view.label}】`;
-      }
-      if (item.type === "CIRS") {
-        return view.label === "競合SEC" ? "【競合IR/SEC】" : `【競合IR/SEC｜${view.label}】`;
-      }
-      return `【IONQ｜${view.label}】`;
-    }
-
-    function actionFor(label) {
-      const actions = {
-        "投資比較": "記事の結論だけで選ばず、売上成長と企業評価を競合と比較して判断。",
-        "M&A": "買収額と業績への寄与が確認できるまで、強材料と決めつけない。",
-        "提携・契約": "契約額と売上時期が出れば強材料。実証実験だけなら続報待ち。",
-        "業績": "売上・受注・見通しの改善なら強材料。赤字拡大や希薄化なら警戒。",
-        "株価": "値動きだけで追わず、契約・売上など一次情報がなければ短期需給として扱う。",
-        "政府案件": "予算とIonQの受注額が確認できれば注目。採択や参加だけなら続報待ち。",
-        "技術": "目標値ではなく実測性能と提供時期が確認できるまで、評価を急がない。",
-        "市場評価": "目標株価だけで動かず、評価変更の根拠が業績にあるかを確認。",
-        "量子業界": "IONQ単体の材料ではないため、需要拡大・競争激化・規制変化のどれかに分けて投稿する。",
-        "競合動向": "競合の進展はIonQの相対評価に直結。技術性能、顧客、資金力を比較して見る。",
-        "業界資金": "量子分野への資金流入なら追い風。ただしIonQに直接入る資金かは分けて伝える。",
-        "公式発表": "数字と実施時期が明確なら注目。構想や目標だけなら続報待ち。",
-        "NEWS": "見出しだけで動かず、一次情報と具体的な数字を確認してから判断。",
-        "SEC 8-K": "添付資料を確認。売上につながる契約なら注目し、資金調達なら希薄化を警戒。",
-        "SEC 10-Q": "売上・受注・現金が改善なら注目。赤字拡大や希薄化なら警戒。",
-        "SEC 10-K": "成長実績と資金余力が長期シナリオを支えるか確認して判断。",
-        "資金調達": "資金使途と希薄化率を確認するまで、新株発行を好材料と決めつけない。",
-        "大口保有": "保有比率の増減と目的を確認。単なる定期報告なら過剰反応しない。",
-        "SEC": "見出しでは判断せず、本文と添付資料の数字を確認。"
-      };
-      return actions[label] || actions.NEWS;
-    }
-
-    function headlineFor(item, view) {
-      const title = cleanTitle(item.title);
-      const text = title.toLowerCase();
-      if (item.type === "QNEWS" || item.type === "CIRS") {
-        if (/ion trap|trapped ion|ion-trap|イオントラップ/.test(text) && /laser|レーザー/.test(text)) {
-          return "イオントラップ量子計算の“心臓部”を小型化する話。地味だが、実用化にはかなり重要。";
-        }
-        if (/ibm|google|alphabet|microsoft|azure|amazon|aws|braket|rigetti|rgti|d-wave|dwave|qbts|quantum computing inc|qubt|quantinuum|honeywell|\bhon\b|pasqal|quera|atom computing|nvidia|nvda/.test(text)) {
-          return "競合・周辺企業が一歩進めた可能性。まずは何が進んだのかを確認したい。";
-        }
-        if (/funding|raises|investment|grant|budget|fund|資金|投資|予算/.test(text)) {
-          return "量子分野に資金が流れ込むニュース。市場拡大の温度感を見る材料。";
-        }
-        if (/government|defense|darpa|nist|policy|regulation|政府|国防|政策|規制/.test(text)) {
-          return "量子技術が国家戦略として扱われているサイン。民間企業にも波及し得る。";
-        }
-        return "量子業界の温度感を測るニュース。IonQ単体ではなく、市場全体の流れを見る材料。";
-      }
-      if (view.label === "株価") return "値動きの理由を分解する材料。大事なのは株価より、その裏に事業変化があるか。";
-      if (view.label === "提携・契約") return "商用化に近づく可能性がある材料。相手先と契約額がカギ。";
-      if (view.label === "業績") return "期待ではなく数字でIonQを見る局面。売上、受注、現金が焦点。";
-      if (view.label.startsWith("SEC")) return "一次情報なので重要。見出しではなく本文の数字を見るべき材料。";
-      return "IonQの成長ストーリーに関係する可能性がある材料。数字と相手先を確認したい。";
-    }
-
-    function eventLine(item, view, title) {
-      const source = shortSource(item);
-      if (item.type === "QNEWS") {
-        return `${source}が「${shortTitle(title, 96)}」を報道。IonQそのものではなく、量子コンピューター産業の部品・技術・政策・競争環境を読むニュース。`;
-      }
-      if (item.type === "CIRS" && item.form) {
-        return `${item.ticker || "競合"}が${item.form}をSECへ提出。競合企業の一次情報。`;
-      }
-      if (item.type === "CIRS") {
-        const tt = findTickers(item.title);
-        if (tt.length >= 2) {
-          return `${source}が「${shortTitle(title, 96)}」を報道。${tt.slice(0, 3).map(t => COMPANY_INFO[t] ? COMPANY_INFO[t].name : t).join("／")}を巡る競合材料。`;
-        }
-        return `${source}が「${shortTitle(title, 96)}」を報道。競合・周辺企業の材料。`;
-      }
-      if (item.type === "SEC") return view.lead;
-      return view.lead;
-    }
-
-    function newsExplanation(item, view, title) {
-      const text = `${title} ${item.description || ""}`.toLowerCase();
-      const source = shortSource(item);
-      // 比較・対決記事は各社の方式と論点を具体的に書く（テンプレ回避・深掘り）
-      const titleTickers = findTickers(item.title);
-      if (titleTickers.length >= 2) {
-        const named = titleTickers.slice(0, 3).map(companyDesc).join(" と ");
-        return `${named} を比較する記事。方式が違えば強みも違う——イオントラップは高忠実度・全結合、超伝導は高速で量子ビットを増やしやすい、アニーリングは最適化特化。勝敗は「忠実度」「量子ビット数」「商用提供の広さ」「資金力」のどの軸で測るかで結論が変わる。下の比較欄でIonQの勝ち負けを整理した。`;
-      }
-      if (/larger drop than the general market|drop than the general market|underperform|suffers a larger drop|market: key/.test(text)) {
-        return `${source}は、IonQ株が市場全体より大きく下げたことを取り上げている。これは新しい契約や技術発表というより、短期の株価変動を説明するタイプの記事。読むべき点は「下落の理由がIonQ固有の悪材料なのか、市場全体のリスクオフなのか」。`;
-      }
-      if (/stock.*(?:fall|drop|down|plunge|slide)|shares.*(?:fall|drop)|下落|急落/.test(text)) {
-        return `${source}は、IonQ株の下落要因を扱っている。重要なのは下落率そのものではなく、売上・契約・資金調達など事業価値を変える材料が含まれるかどうか。`;
-      }
-      if (/stock.*(?:rise|gain|jump|pop|surge|soar)|shares.*(?:rise|gain|jump|soar)|上昇|急騰/.test(text)) {
-        return `${source}は、IonQ株の上昇要因を扱っている。期待だけで上がったのか、契約・業績・技術進展などの裏付けがあるのかを分けて見たい。`;
-      }
-      if (item.type === "QNEWS") {
-        return `${source}は、IonQ単体ではなく量子コンピューター業界の技術・政策・競争環境に関するニュースを報じている。IonQへの直接材料か、業界全体の追い風かを分けて読む必要がある。`;
-      }
-      if (item.type === "CIRS" && item.form) {
-        return `${item.ticker || "競合"}のSEC開示。資金調達、業績、契約、リスク変化など、その会社の状況を読む一次情報。`;
-      }
-      if (item.type === "CIRS") {
-        return `${source}による競合・周辺企業のニュース。技術、顧客、資金力、商用化スピードのどこに関係する話かを見る。`;
-      }
-      if (item.type === "SEC") return "SECに提出された一次情報。見出しではなく、本文の金額・日付・株式数・添付資料を確認する価値がある。";
-      return `${source}によるIonQ関連ニュース。現時点では報道ベースなので、一次情報・具体的な数字・発表主体を確認してから材料性を判断したい。`;
-    }
-
-    function termExplanation(view, title) {
-      // 見出し本文だけで判定する。view.body（テンプレ文）を混ぜると
-      // 「8-K」なのに"資金"に誤反応する等のズレが出るため使わない。
-      const text = String(title || "").toLowerCase();
-      if (/larger drop than the general market|drop than the general market|general market|underperform/.test(text)) {
-        return "general marketは市場全体のこと。larger drop than the general marketは、主要指数や市場平均よりも大きく下げたという意味。IonQ固有の悪材料とは限らず、高成長株や量子関連株がまとめて売られた可能性もある。";
-      }
-      if (/stock.*(?:fall|drop|down|plunge|slide)|shares.*(?:fall|drop)|下落|急落/.test(text)) {
-        return "株価下落記事は、事業の悪化を示すものと、短期の需給・地合いを説明するものがある。本文で下落理由が具体的かどうかを見る必要がある。";
-      }
-      if (/stock.*(?:rise|gain|jump|pop|surge|soar)|shares.*(?:rise|gain|jump|soar)|上昇|急騰/.test(text)) {
-        return "株価上昇記事は、材料の強さと期待先行を分けて見る必要がある。契約額や業績見通しがない場合、短期の値動き説明に近い。";
-      }
-      if (/ion trap|trapped ion|ion-trap|イオントラップ/.test(text) && /laser|レーザー/.test(text)) {
-        return "イオントラップ方式は、電場でイオンを閉じ込め、レーザーで量子状態を操作する方式。レーザー増幅器はそのレーザー信号を強く安定させる部品で、小型化できると装置全体を小さく・安定・量産しやすくなる。";
-      }
-      if (/ion trap|trapped ion|ion-trap|イオントラップ/.test(text)) {
-        return "イオントラップ方式は、原子を電気的に閉じ込めて量子ビットとして使う方式。精度の高さが強みだが、装置の複雑さや拡張性が課題になりやすい。";
-      }
-      if (/laser|レーザー/.test(text)) {
-        return "量子コンピューターでレーザーは、量子ビットを操作したり読み出したりするための重要部品。安定性や小型化は実用機の信頼性に直結する。";
-      }
-      if (/qubit|量子ビット/.test(text)) {
-        return "量子ビットは量子コンピューターの基本単位。数が多いだけでなく、誤り率や安定性が実用性を左右する。";
-      }
-      if (/fidelity|精度|error|誤り/.test(text)) {
-        return "精度は計算の正確さを示す重要指標。量子計算は誤りが出やすいため、精度改善は実用化に直結する。";
-      }
-      if (/funding|investment|grant|budget|資金|投資|予算/.test(text)) {
-        return "量子業界は研究開発費が重い分野。資金流入は開発加速の追い風だが、競合の体力も増える。";
-      }
-      return termNote(view);
-    }
-
-    function whyBig(item, view, title) {
-      const text = `${title} ${view.body}`.toLowerCase();
-      if (["QNEWS", "CIRS"].includes(item.type) && /ion trap|trapped ion|ion-trap|イオントラップ/.test(text) && /laser|レーザー/.test(text)) {
-        return "量子コンピューターは本体の性能だけでなく、レーザー、制御装置、冷却、光学部品など周辺技術の完成度で実用性が決まる。小型レーザー増幅器は派手な発表ではないが、装置を研究室から商用機へ近づけるための基盤技術になり得る。";
-      }
-      if (item.type === "QNEWS" && view.label === "競合動向") {
-        return "競合の進展はIonQの評価軸を変える。技術性能だけでなく、顧客獲得、クラウド提供、量産性で比較されるため、相対的な強みが見えやすくなる。";
-      }
-      if (item.type === "QNEWS" && view.label === "業界資金") {
-        return "資金が入るほど研究開発と人材獲得が進む。業界全体には追い風だが、競合も加速するためIonQだけが得をする話ではない。";
-      }
-      if (item.type === "QNEWS") return view.body;
-      if (item.type === "CIRS") return "競合・周辺企業の材料。直接の投資判断ではなく、業界内の位置取りを見る材料として扱う。";
-      // IR・市場ニュース・SEC：テーマ別にIonQ固有の投資家視点を出す
-      return ionqAngle(item) || view.body;
-    }
-
-    // IonQ直接ニュースのテーマを判定し、投資家が具体的に見るべき点を返す（テンプレ脱却）
-    function ionqAngle(item) {
-      const text = `${item.title || ""} ${item.description || ""}`.toLowerCase();
-
-      if (/earnings|revenue|guidance|backlog|bookings|results|quarter|annual|10-q|10-k|決算|売上|受注|業績|四半期|通期/.test(text)) {
-        return "IonQの決算で本当に見るべきは売上の絶対額より、①受注残(backlog)・予約(bookings)の伸び、②手元現金（増資なしで何年戦えるか）、③純損失が縮小しているか。量子はまだ投資先行フェーズなので、赤字でも受注と現金が積み上がっていれば前進と読める。逆に受注横ばい＋現金減＋希薄化なら警戒。";
-      }
-      if (/government|defense|darpa|air force|navy|army|federal|nasa|doe|nist|政府|国防|防衛|軍/.test(text)) {
-        return "政府・防衛・国研の案件は信頼性と安定収益の裏付けになりやすく、IonQが実績を伸ばしている領域。重要度は『受注額』と『IonQの担当範囲（主契約か一部参加か）』『複数年か単発か』で決まる。採択・参加表明だけなら続報待ち。";
-      }
-      if (/contract|partnership|agreement|collaboration|deal|customer|adopt|提携|契約|協業|採用|導入|顧客/.test(text)) {
-        return "契約は『実証実験(PoC)』か『複数年の本契約』かで価値が段違い。相手先・金額・期間が明示され、売上計上の時期が見えるほど強い。AWS/Azure/Google Cloud経由の利用拡大なら、継続課金という売上の“質”の面で効く。";
-      }
-      if (/fidelity|qubit|\baq\b|algorithmic|roadmap|gate|error correction|忠実度|量子ビット|精度|誤り訂正|ロードマップ/.test(text)) {
-        return "IonQの性能はAQ(アルゴリズム量子ビット＝実効的に使える数)で見るのが筋。物理量子ビットの数より、忠実度×全結合×エラー率で決まる実用性能が肝心。イオントラップの強みは高忠実度と全結合で、ここが伸びれば実アプリでの優位に直結する。目標値か実測値か、提供時期はいつかを必ず確認。";
-      }
-      if (/network|interconnect|photonic|entangl|量子ネット|相互接続|もつれ/.test(text)) {
-        return "量子ネットワーキング(量子間接続)はIonQが注力する差別化領域。複数の量子コンピュータを繋いで規模を稼ぐ構想で、単体性能の競争とは別軸の長期優位になり得る。実証段階か製品化かで距離感を測りたい。";
-      }
-      if (/offering|raise|capital|dilution|shares|\batm\b|prospectus|registration|s-3|424b|増資|新株|希薄化|調達|目論見/.test(text)) {
-        return "増資・新株発行は開発資金を厚くする反面、既存株主の希薄化要因。IonQは赤字先行なので資金確保自体は前向きにも取れるが、発行株数・使途・ATM(随時売出)か一括かを確認。手元現金が潤沢なタイミングでの発行はネガティブに受け取られやすい。";
-      }
-      if (/acquisition|acquire|merger|買収|合併/.test(text)) {
-        return "IonQは買収で技術・人材・顧客を取り込む動きを見せている。見るべきは買収額と、それが売上・技術ロードマップにどう寄与するか。株式対価なら希薄化、現金対価なら手元資金の減少もチェック。";
-      }
-      return "";
-    }
-
-    function termNote(view) {
-      const notes = {
-        "投資比較": "投資比較は、技術の良さだけでなく売上、赤字、時価総額、将来期待を並べて割安かを見ること。",
-        "M&A": "M&Aは企業買収。技術、人材、顧客を一気に取り込める一方、買収額が高すぎると重荷になる。",
-        "提携・契約": "提携は協力関係、契約は売上につながる約束。実証実験か本契約かで価値が大きく違う。",
-        "業績": "業績は売上、受注、現金、赤字の数字。量子企業は期待だけでなく実際の成長確認が重要。",
-        "株価": "株価材料は、事業価値が変わったのか、短期の需給で動いただけなのかを分けて見る必要がある。",
-        "政府案件": "政府案件は国や公的機関の予算が絡む仕事。信頼性は高いが、実際の受注額が重要。",
-        "技術": "量子ビットや精度は計算性能に関わる指標。目標値より、実測値と商用提供時期が重要。",
-        "市場評価": "市場評価はアナリストの格付けや目標株価。根拠が業績なのか期待なのかを見たい。",
-        "競合動向": "競合動向はIBM、Google、Microsoftなど他社の進展。IonQの相対的な強さを見る材料。",
-        "業界資金": "業界資金は量子分野に流れ込む投資や補助金。市場拡大の追い風だが競争も強まる。",
-        "量子業界": "量子業界ニュースはIonQ単体ではなく、市場全体の需要、政策、競争環境を読む材料。",
-        "公式発表": "公式発表は会社自身が出す一次情報。報道より信頼度が高く、数字と時期が重要。",
-        "NEWS": "報道ニュースは二次情報。見出しの強さより、一次情報で裏取りできるかが重要。",
-        "SEC 8-K": "8-Kは米国企業の臨時重要開示。契約、資金調達、経営変更など重要イベントが出る。",
-        "SEC 10-Q": "10-Qは四半期報告書。売上、赤字、現金、リスクを定期的に確認できる。",
-        "SEC 10-K": "10-Kは年次報告書。通期の成績と長期リスクをまとめて確認できる。",
-        "資金調達": "資金調達は開発資金を増やす行為。新株なら既存株主の希薄化に注意。",
-        "大口保有": "大口保有は大株主の保有状況。買い増しなのか、単なる報告なのかで意味が違う。",
-        "SEC": "SEC開示は米国証券取引委員会への一次情報。本文と添付資料の数字が重要。"
-      };
-      return notes[view.label] || notes.NEWS;
-    }
-
-    function importanceStars(item, view) {
-      const score = clamp(scoreForImportance(item, view) + factBump(item).imp, 1, 5);
-      return `${stars(score)} ${score}/5`;
-    }
-
-    function stockStars(item, view) {
-      const score = clamp(scoreForStock(item, view) + factBump(item).stock, 1, 5);
-      return `${stars(score)} ${score}/5`;
-    }
-
-    function tickerLine(item, view) {
-      const tickers = relatedTickers(item);
-      const tickerText = tickers.join(" / ");
-      return tickerText;
-    }
-
-    // 社名だけでなくティッカー記号（RGTI/QBTS等）も拾う。見出しに
-    // 「QBTS or RGTI」のように記号で書かれるケースが多いため。
-    const TICKER_PAIRS = [
-      { ticker: "$IONQ", patterns: [/ionq|ion q|イオンキュー|\bionq\b/] },
-      { ticker: "$RGTI", patterns: [/rigetti|リゲッティ|\brgti\b/] },
-      { ticker: "$QBTS", patterns: [/d-wave|dwave|d wave|ディーウェーブ|\bqbts\b/] },
-      { ticker: "$QUBT", patterns: [/quantum computing inc|quantum computing incorporated|\bqubt\b/] },
-      { ticker: "$IBM", patterns: [/\bibm\b/] },
-      { ticker: "$GOOGL", patterns: [/google|alphabet|グーグル|\bgoogl?\b/] },
-      { ticker: "$MSFT", patterns: [/microsoft|azure|マイクロソフト|\bmsft\b/] },
-      { ticker: "$AMZN", patterns: [/amazon|aws|braket|アマゾン|\bamzn\b/] },
-      { ticker: "$HON", patterns: [/honeywell|quantinuum|ハネウェル|\bhon\b/] },
-      { ticker: "$NVDA", patterns: [/nvidia|cuda-q|エヌビディア|\bnvda\b/] }
-    ];
-
-    function findTickers(text) {
-      const lower = String(text || "").toLowerCase();
-      const found = [];
-      TICKER_PAIRS.forEach(({ ticker, patterns }) => {
-        if (patterns.some(pattern => pattern.test(lower)) && !found.includes(ticker)) found.push(ticker);
-      });
-      return found;
-    }
-
-    function relatedTickers(item) {
-      const found = findTickers(`${item.title || ""} ${item.description || ""} ${item.source || ""}`);
-      if (!found.includes("$IONQ")) found.unshift("$IONQ");
-      return found.slice(0, 5);
-    }
-
-    function scoreForImportance(item, view) {
-      const title = cleanTitle(item.title).toLowerCase();
-      if (item.type === "QNEWS" && /ion trap|trapped ion|ion-trap|イオントラップ/.test(title) && /laser|レーザー/.test(title)) return 4;
-      if (["提携・契約", "業績", "SEC 8-K", "SEC 10-Q", "政府案件"].includes(view.label)) return 4;
-      if (["M&A", "技術", "資金調達", "競合動向", "業界資金"].includes(view.label)) return 3;
-      if (["公式発表", "SEC 10-K", "量子業界"].includes(view.label)) return 3;
-      if (["株価", "市場評価", "投資比較"].includes(view.label)) return 2;
-      return item.type === "IR" || item.type === "SEC" ? 3 : 2;
-    }
-
-    function scoreForStock(item, view) {
-      const title = cleanTitle(item.title).toLowerCase();
-      if (item.type === "QNEWS" && /ion trap|trapped ion|ion-trap|イオントラップ/.test(title) && /laser|レーザー/.test(title)) return 2;
-      if (view.label === "株価") return 4;
-      if (["業績", "提携・契約", "SEC 8-K", "資金調達"].includes(view.label)) return 4;
-      if (["政府案件", "M&A", "市場評価", "SEC 10-Q"].includes(view.label)) return 3;
-      if (["競合動向", "業界資金", "技術", "公式発表"].includes(view.label)) return 2;
-      return 2;
-    }
-
-    function stars(score) {
-      return "★★★★★".slice(0, score) + "☆☆☆☆☆".slice(0, 5 - score);
-    }
-
-    // 各社の方式と立ち位置（ニュース内容を具体化するための基礎情報）
-    const COMPANY_INFO = {
-      "$IONQ": { name: "IonQ", tech: "イオントラップ方式" },
-      "$RGTI": { name: "Rigetti", tech: "超伝導方式・小型純粋持株" },
-      "$QBTS": { name: "D-Wave", tech: "量子アニーリング方式" },
-      "$QUBT": { name: "Quantum Computing Inc", tech: "光方式・小型" },
-      "$IBM": { name: "IBM", tech: "超伝導方式・最大手" },
-      "$GOOGL": { name: "Google", tech: "超伝導方式・誤り訂正研究" },
-      "$MSFT": { name: "Microsoft", tech: "Azure基盤＋トポロジカル方式" },
-      "$AMZN": { name: "Amazon", tech: "Braket基盤＋自社ハード" },
-      "$HON": { name: "Quantinuum(Honeywell系)", tech: "イオントラップ方式・直接競合" },
-      "$NVDA": { name: "NVIDIA", tech: "GPU/CUDA-Q（補完）" }
-    };
-
-    // IonQが各競合に対して「勝っている点／負けている点」。比較欄で具体的に書くための知識。
-    const IONQ_VS = {
-      "$RGTI": {
-        win: "2量子ビットゲート忠実度の高さ、全結合(all-to-all)接続、AWS/Azure/Google Cloudの3大クラウド提供",
-        lose: "ゲート速度（処理クロック）は超伝導のRigettiが速い。量子ビット数の拡張ペースも超伝導が有利",
-        note: "方式違い（IonQ=イオントラップ／Rigetti=超伝導）。どちらも小型・赤字先行のピュアプレイ"
-      },
-      "$QBTS": {
-        win: "ゲート型の汎用機で任意アルゴリズムに対応、忠実度の高さ",
-        lose: "D-Waveはアニーリングで“今使える”最適化案件と実売上を持ち、短期の商用実績では先行",
-        note: "土俵が違う（IonQ=ゲート型汎用／D-Wave=最適化特化のアニーリング）。直接比較は要注意"
-      },
-      "$QUBT": {
-        win: "実機性能・クラウド提供・顧客実績で大きく先行",
-        lose: "目立った劣勢なし（QUBTは規模が小さく実証段階）",
-        note: "Quantum Computing Incは光方式で時価総額・実績ともに小さい"
-      },
-      "$IBM": {
-        win: "1量子ビットあたりの忠実度・全結合で質的に優位",
-        lose: "量子ビット数・ロードマップ規模・研究開発費・Qiskitエコシステムは巨人IBMが圧倒",
-        note: "IBM=超伝導の最大手。物量で先行、IonQは質で対抗"
-      },
-      "$GOOGL": {
-        win: "3大クラウドでの商用提供と高い忠実度",
-        lose: "誤り訂正の研究成果(Willow等)と研究開発費はGoogleが先行",
-        note: "Google=超伝導＋誤り訂正研究で先端。資金力で大差"
-      },
-      "$MSFT": {
-        win: "実機を“今”使える（Microsoftのトポロジカル方式はまだ初期段階）",
-        lose: "Azureというプラットフォーム支配力と資金力では及ばない",
-        note: "Microsoftは基盤(Azure)＋トポロジカル。IonQはAzure上の提供パートナーでもある"
-      },
-      "$AMZN": {
-        win: "実機をBraketで提供、高い忠実度",
-        lose: "AWSの基盤力と自社ハード投資の体力では及ばない",
-        note: "Amazonは基盤(Braket)＋自社ハード。IonQはBraket上の提供パートナーでもある"
-      },
-      "$HON": {
-        win: "上場企業としてクラウド経由で誰でも使える点",
-        lose: "同じイオントラップ方式の最強ライバル。Quantinuumは資金力と一部ベンチマークで先行",
-        note: "Quantinuum=IonQと同方式の直接競合。最も比較されるべき相手"
-      },
-      "$NVDA": {
-        win: "—（競合ではなく補完）",
-        lose: "—",
-        note: "NVIDIAはGPU/CUDA-Qで量子古典ハイブリッドや高速シミュレーションを担う。競合よりパートナー寄り"
-      }
-    };
-
-    function companyDesc(ticker) {
-      const info = COMPANY_INFO[ticker];
-      return info ? `${info.name}（${info.tech}）` : ticker;
-    }
-
-    // 記事タイトル等に出てくる競合（IonQ以外でIONQ_VSに定義のある銘柄）
-    function rivalCompanies(item) {
-      return findTickers(`${item.title || ""} ${item.description || ""}`)
-        .filter(ticker => ticker !== "$IONQ" && IONQ_VS[ticker]);
-    }
-
-    function comparisonForIonQ(view, title = "", item = {}) {
-      // 具体的な競合が分かるなら「勝ち/負け」をはっきり書く
-      const rivals = rivalCompanies(item);
-      if (rivals.length) {
-        return rivals.slice(0, 3).map(ticker => {
-          const v = IONQ_VS[ticker];
-          const name = COMPANY_INFO[ticker].name;
-          if (v.win === "—") {
-            return `▼IonQ vs ${name}（${ticker}）\n・関係：競合ではなく補完。${v.note}`;
-          }
-          return `▼IonQ vs ${name}（${ticker}）\n・IonQが勝っている点：${v.win}\n・IonQが負けている点：${v.lose}\n・前提：${v.note}`;
-        }).join("\n\n");
-      }
-
-      // 具体的な競合が特定できない場合のフォールバック
-      const text = title.toLowerCase();
-      if (/ion trap|trapped ion|ion-trap|イオントラップ/.test(text) && /laser|レーザー/.test(text)) {
-        return "IonQもイオントラップ方式を使うため、レーザー制御や光学部品の小型化はかなり近いテーマ。ただしこの記事がIonQの採用や契約を示すわけではない。$IONQ にとっては、同方式の装置が商用化しやすくなる追い風として見るのが自然。";
-      }
-      if (view.label === "競合動向") return "競合が性能・顧客・資金力で進むほどIonQの比較対象になる。IonQはイオントラップ方式の精度やクラウド提供、商用契約でどこまで差を出せるかが焦点。";
-      if (view.label === "業界資金") return "業界への資金流入はIonQにも追い風。ただし資金が競合に入る場合、IonQは技術優位と売上化の速さで比較される。";
-      return "直接のIonQ材料ではないが、量子市場が広がるほどIonQの成長余地も見られる。一方で競争激化なら相対評価は厳しくなる。";
-    }
-
-    function conclusionFor(item, view) {
-      if (item.type === "QNEWS") return "これはIonQの直接材料ではない。ただ、量子コンピューターが実験装置から商用機へ進むための周辺技術ニュースとしては見る価値がある。";
-      if (item.type === "CIRS") return "競合・周辺企業の材料なので、まずはその会社の進展度を見てから判断する。";
-      if (item.type === "IR") return "公式材料なので優先度は高い。数字、相手先、売上化の時期が見えれば強い。";
-      if (item.type === "SEC") return "一次情報なので重要。見出しで終わらせず、金額・株式数・添付資料まで見る価値がある。";
-      return "報道ベースなので、株価の話題として使う前に一次情報と具体的な数字を確認したい。";
-    }
-
-    function analyze(item, priority) {
-      const title = cleanTitle(item.title);
-      const text = `${title} ${item.description || ""}`.toLowerCase();
-      const source = shortSource(item);
-      if (priority === "SEC") return analyzeSec(item);
-      if (priority === "QNEWS") return analyzeQuantum(item);
-      if (priority === "CIRS") return item.form ? analyzeCompetitorSec(item) : analyzeQuantum(item);
-      const official = priority === "IR";
-      const subject = official ? "IonQが" : `${source}が`;
-
-      if (/should investors choose ionq|better.*stock|ionq.*(?:vs\.?|versus)|(?:vs\.?|versus).*ionq|choose ionq|buy.*ionq|ionq.*buy/.test(text)) return {
-        label: "投資比較",
-        lead: `${source}が、IonQを他の量子関連銘柄より選ぶべきかを比較。`,
-        body: "焦点は技術力や提携実績だけでなく、売上規模、赤字、高い企業評価に見合う成長を示せるか。",
-        watch: "比較対象、評価の前提、記事の最終結論。"
-      };
-      if (/acquisition|acquire|merger|買収|合併/.test(text)) return {
-        label: "M&A",
-        lead: `${subject}${quoteTitle(title)}を${official ? "発表" : "報道"}。`,
-        body: "技術・人材・顧客基盤の獲得につながる一方、買収額と統合効果が企業価値を左右する。",
-        watch: "買収額、対象技術、完了時期、業績への寄与。"
-      };
-      if (/contract|agreement|partnership|collaboration|提携|契約|採用|導入/.test(text)) return {
-        label: "提携・契約",
-        lead: `${subject}${quoteTitle(title)}を${official ? "発表" : "報道"}。`,
-        body: "研究発表ではなく、顧客・売上・実利用へつながる契約かどうかが評価の分かれ目。",
-        watch: "相手先、契約額、期間、実証か本契約か。"
-      };
-      if (/earnings|revenue|guidance|backlog|results|決算|売上|受注/.test(text)) return {
-        label: "業績",
-        lead: `${subject}${quoteTitle(title)}を${official ? "発表" : "報道"}。`,
-        body: "量子技術への期待を、売上成長・受注残・資金余力という実際の数字で検証する材料。",
-        watch: "売上、受注残、現金、赤字、株式希薄化。"
-      };
-      if (/stock.*(?:fall|drop|down|plunge|slide)|why.*fall|shares.*(?:fall|drop)|suffers a larger drop|larger drop than the general market|underperform|下落|急落/.test(text)) return {
-        label: "株価",
-        lead: `${source}がIonQ株の下落要因を報道。${signalFromTitle(title)}`.trim(),
-        body: "材料そのものと短期的な需給を分け、事業価値を変える事実があるかを見極めたい。",
-        watch: "下落率、直接の材料、出来高、一次情報との整合。"
-      };
-      if (/stock.*(?:rise|gain|jump|pop|surge|soar)|shares.*(?:rise|gain|jump|soar)|上昇|急騰/.test(text)) return {
-        label: "株価",
-        lead: `${source}がIonQ株の上昇要因を報道。${signalFromTitle(title)}`.trim(),
-        body: "期待先行の値動きか、売上や商用化を押し上げる新事実が伴うかが重要。",
-        watch: "上昇率、直接の材料、出来高、発表元。"
-      };
-      if (/government|darpa|defense|federal|政府|国防|安全保障/.test(text)) return {
-        label: "政府案件",
-        lead: `${subject}${quoteTitle(title)}を${official ? "発表" : "報道"}。`,
-        body: "政府・国防需要への接続は信頼性の裏付けになるが、実際の契約規模とIonQの担当範囲が重要。",
-        watch: "機関名、予算、契約期間、主契約者か。"
-      };
-      if (/roadmap|qubit|fidelity|hardware|network|技術|量子ビット|精度/.test(text)) return {
-        label: "技術",
-        lead: `${subject}${quoteTitle(title)}を${official ? "発表" : "報道"}。`,
-        body: "性能向上が商用利用へ直結するか、目標ではなく実測値と提供時期で判断したい。",
-        watch: "実績か計画か、性能指標、競合差、提供時期。"
-      };
-      if (/analyst|price target|rating|upgrade|downgrade|目標株価|格付け/.test(text)) return {
-        label: "市場評価",
-        lead: `${source}が${quoteTitle(title)}を報道。`,
-        body: "評価変更の根拠が業績見通しの変化なのか、株価水準だけの判断なのかを分けて見る必要がある。",
-        watch: "評価会社、目標株価、変更理由、前提数字。"
-      };
-
-      return {
-        label: official ? "公式発表" : "NEWS",
-        lead: `${subject}${quoteTitle(title)}を${official ? "発表" : "報道"}。`,
-        body: official
-          ? "IonQ自身の発表として、商用化・売上・技術優位性のどこに影響する内容かを確認したい。"
-          : "見出しだけで判断せず、IonQの売上・競争力・資金面を実際に変える新事実が含まれるかが重要。",
-        watch: official ? "発表主体、具体的な数字、実施時期。" : "一次情報、具体的な数字、記事の結論。"
-      };
-    }
-
-    function analyzeQuantum(item) {
-      const title = cleanTitle(item.title);
-      const text = `${title} ${item.description || ""}`.toLowerCase();
-      const source = shortSource(item);
-
-      if (/ibm|google|alphabet|microsoft|azure|amazon|aws|braket|rigetti|rgti|d-wave|dwave|qbts|quantum computing inc|qubt|quantinuum|honeywell|\bhon\b|pasqal|quera|atom computing|nvidia|nvda/.test(text)) return {
-        label: "競合動向",
-        lead: `${source}が量子コンピューター関連で${quoteTitle(title)}を報道。`,
-        body: "IonQだけでなく、量子業界全体の競争環境を動かす材料。競合が性能、顧客、クラウド提供、資金力のどこを伸ばしたかで意味が変わる。",
-        watch: "企業名、技術方式、性能指標、商用提供時期、顧客名。"
-      };
-
-      if (/funding|raises|investment|venture|ipo|spac|grant|budget|fund|資金|投資|予算/.test(text)) return {
-        label: "業界資金",
-        lead: `${source}が量子分野の資金・投資ニュースとして${quoteTitle(title)}を報道。`,
-        body: "量子分野に資金が向かうことは市場拡大の追い風。一方で、競合にも資金が入りやすくなり、IonQの差別化がより重要になる。",
-        watch: "資金額、投資主体、対象企業、用途、IonQとの関係。"
-      };
-
-      if (/government|defense|darpa|nist|nsa|eu|china|japan|policy|regulation|政府|国防|政策|規制/.test(text)) return {
-        label: "量子業界",
-        lead: `${source}が量子分野の政策・政府案件として${quoteTitle(title)}を報道。`,
-        body: "量子技術は民間需要だけでなく、政府・安全保障・研究予算の影響が大きい領域。政策の方向性はIonQの案件機会にも波及し得る。",
-        watch: "国・機関名、予算規模、対象技術、企業への発注有無。"
-      };
-
-      return {
-        label: "量子業界",
-        lead: `${source}が量子コンピューター関連ニュースとして${quoteTitle(title)}を報道。`,
-        body: "IONQ単体のニュースではないが、業界全体の需要、競争、技術進展を読む材料。IonQの成長シナリオに追い風か逆風かを分けたい。",
-        watch: "対象企業、技術方式、商用化時期、数字、IonQとの接点。"
-      };
-    }
-
-    function analyzeCompetitorSec(item) {
-      const form = String(item.form || "").toUpperCase();
-      const ticker = item.ticker || "競合";
-      if (form === "8-K") return { label: "競合SEC", lead: `${ticker}が臨時重要開示8-KをSECへ提出。`, body: "契約、資金調達、経営変更などが出る可能性がある一次情報。内容次第で市場の見方が変わる。", watch: "フォーム、金額、契約相手、発効日、添付資料。" };
-      if (form === "10-Q") return { label: "競合SEC", lead: `${ticker}が四半期報告書10-QをSECへ提出。`, body: "売上、現金、赤字、リスクを見られる資料。事業が前に進んでいるか、資金に余裕があるかを確認したい。", watch: "売上、現金、赤字、受注、リスク。" };
-      if (form === "10-K") return { label: "競合SEC", lead: `${ticker}が年次報告書10-KをSECへ提出。`, body: "通期実績と主要リスクを確認できる資料。成長率、資金余力、商用化の進み具合を見る。", watch: "成長率、資金余力、主要リスク、株式数。" };
-      if (form.includes("S-3") || form.includes("424B")) return { label: "競合SEC", lead: `${ticker}が資金調達関連の${form}をSECへ提出。`, body: "競合の資金余力が増える可能性がある一方、希薄化も確認したい材料。", watch: "発行額、資金使途、希薄化、登録のみか発行済みか。" };
-      return { label: "競合SEC", lead: `${ticker}が${form || "SEC書類"}を提出。`, body: "競合・周辺企業の一次情報。提出理由と数字を見て、重要度を判断したい。", watch: "提出理由、金額、日付、添付資料。" };
-    }
-
-    function impactFor(item, view) {
-      if (item.type === "QNEWS") {
-        if (view.label === "競合動向") return "競合が先行するなら警戒材料。市場拡大を示すなら業界全体には追い風。";
-        if (view.label === "業界資金") return "量子分野への資金流入は追い風。ただしIonQへ直接入る資金ではない点は明確にしたい。";
-        return "直接材料ではないが、量子市場の拡大・政策支援・商用化の速度を見る補助線になる。";
-      }
-      if (item.type === "IR") return "公式発表なので優先度は高い。売上、契約、技術ロードマップに直結するか確認したい。";
-      if (item.type === "SEC") return "一次情報なので信頼度は高い。数字や添付資料まで見れば投稿の説得力が上がる。";
-      return "報道ベースなので、一次情報で裏取りできるかが重要。株価材料か事業材料かを分けて扱う。";
-    }
-
-    function analyzeSec(item) {
-      const form = String(item.form || "").toUpperCase();
-      if (form === "8-K") return { label: "SEC 8-K", lead: "IonQが臨時重要報告書8-KをSECへ提出。", body: "契約、資金調達、経営変更など、株価へ直結し得る事実が含まれる一次情報。", watch: "Item番号、金額、発効日、添付資料。" };
-      if (form === "10-Q") return { label: "SEC 10-Q", lead: "IonQが四半期報告書10-QをSECへ提出。", body: "期待ではなく、売上・受注・資金余力から事業の進捗を検証できる重要資料。", watch: "売上、受注残、現金、赤字、希薄化。" };
-      if (form === "10-K") return { label: "SEC 10-K", lead: "IonQが年次報告書10-KをSECへ提出。", body: "通期実績と事業リスクを通じ、長期成長ストーリーと現状の差を確認できる。", watch: "成長率、現金、主要リスク、発行株式数。" };
-      if (form.includes("S-3") || form.includes("424B")) return { label: "資金調達", lead: `IonQが${form}をSECへ提出。`, body: "開発資金の確保につながる一方、新株発行なら既存株主の希薄化要因になる。", watch: "発行額、資金使途、発行済みか登録のみか。" };
-      if (/13D|13G/.test(form)) return { label: "大口保有", lead: `IonQ株に関する${form}がSECへ提出。`, body: "大株主の保有状況や保有目的の変化を示す開示。売買の方向と提出者を確認したい。", watch: "提出者、保有比率、増減、保有目的。" };
-      return { label: "SEC", lead: `IonQが${form || "重要書類"}をSECへ提出。`, body: "報道より優先して確認すべき一次情報。内容と数字を本文で確かめたい。", watch: "フォーム、提出理由、具体的な数字、添付資料。" };
-    }
-
-    function cleanTitle(title) {
-      return String(title || "IONQ関連情報")
-        .replace(/\s+-\s+[^-]+$/g, "")
-        .replace(/\s+/g, " ")
-        .trim();
-    }
-
-    function quoteTitle(title) {
-      return `「${shortTitle(title, 110)}」`;
-    }
-
-    function signalFromTitle(title) {
-      const percent = title.match(/\b\d+(?:\.\d+)?%/);
-      return percent ? `見出しでは${percent[0]}の値動きに言及。` : "";
-    }
-
-    function shortTitle(title, max) {
-      const clean = String(title || "IONQ関連情報").replace(/\s+-\s+[^-]+$/g, "").replace(/\s+/g, " ").trim();
-      return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
-    }
-
-    function shortSource(item) {
-      if (item.type === "SEC") return `SEC EDGAR（${item.form || "提出書類"}）`;
-      return shortTitle(String(item.source || item.type).replace(/^@/, "@"), 28);
-    }
-
-    function charWeight(char) {
-      return /^[\u0000-\u00ff]$/.test(char) ? 1 : 2;
-    }
-
-    function nextWeightedToken(text, index) {
-      const rest = text.slice(index);
-      const url = rest.match(/^https?:\/\/[^\s]+/i);
-      if (url) return { text: url[0], length: url[0].length, weight: 23 };
-      const char = String.fromCodePoint(text.codePointAt(index));
-      return { text: char, length: char.length, weight: charWeight(char) };
-    }
-
-    function weightedLength(text) {
-      let total = 0;
-      for (let index = 0; index < text.length;) {
-        const token = nextWeightedToken(text, index);
-        total += token.weight;
-        index += token.length;
-      }
-      return total;
-    }
-
-    function sliceByWeight(text, maxWeight) {
-      let result = "";
-      let weight = 0;
-      for (let index = 0; index < text.length;) {
-        const token = nextWeightedToken(text, index);
-        if (weight + token.weight > maxWeight) break;
-        result += token.text;
-        weight += token.weight;
-        index += token.length;
-      }
-      return result;
-    }
-
-    const X_POST_LIMIT = 25000;
-
-    function fitXLimit(text) {
-      if (weightedLength(text) <= X_POST_LIMIT) return text;
-      const sourceMarker = "\n\n出典：";
-      const sourceIndex = text.lastIndexOf(sourceMarker);
-      if (sourceIndex < 0) {
-        return `${sliceByWeight(text, X_POST_LIMIT - charWeight("…")).trimEnd()}…`;
-      }
-      const main = text.slice(0, sourceIndex);
-      const suffix = text.slice(sourceIndex);
-      const limit = Math.max(1, X_POST_LIMIT - weightedLength(suffix) - charWeight("…"));
-      return `${sliceByWeight(main, limit).trimEnd()}…${suffix}`;
-    }
-
-    function formatDate(value) {
-      const date = new Date(value);
-      if (Number.isNaN(date.getTime())) return value || "";
-      // 米国時間で来る配信時刻を、閲覧環境に関係なく日本時間(JST)で表示する
-      return date.toLocaleString("ja-JP", { timeZone: "Asia/Tokyo", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
-    }
-
-    function escapeHtml(value) {
-      return String(value || "").replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
-    }
-
-    function updateCount() {
-      const count = weightedLength(els.draft.value);
-      els.charCount.textContent = `長文X ${count} / ${X_POST_LIMIT}`;
-      els.charCount.style.color = count > X_POST_LIMIT ? "#ff8990" : "#aeb8c5";
     }
 
     async function refresh() {
-      document.getElementById("refreshButton").disabled = true;
-      els.error.style.display = "none";
+      els.updated.textContent = "更新中";
       try {
-        const response = await fetch(API_URL, { cache: "no-store" });
-        if (!response.ok) throw new Error(`取得失敗 ${response.status}`);
+        const response = await fetch(`${API}/.netlify/functions/latest-ionq`, { cache: "no-store" });
         const data = await response.json();
-        if (data.error) throw new Error(data.message || data.error);
-        await loadPosted();   // 投稿済み状態を端末間で同期
-        normalize(data);
-        renderAll();
-        els.lastUpdated.textContent = `更新 ${formatDate(data.updatedAt || new Date())} JST`;
-        state.seconds = REFRESH_SECONDS;
+        state.items = normalizeLatest(data);
+        els.updated.textContent = formatTime(data.updatedAt || new Date().toISOString());
+        renderItems();
+        if (!state.selectedId && state.items[0]) selectItem(state.items[0].id);
       } catch (error) {
-        els.error.textContent = `最新情報を取得できません: ${error.message}`;
-        els.error.style.display = "block";
-      } finally {
-        document.getElementById("refreshButton").disabled = false;
+        els.updated.textContent = "取得失敗";
+        els.items.innerHTML = `<div class="empty">速報取得に失敗しました。${escapeHtml(error.message)}</div>`;
       }
     }
 
-    document.getElementById("refreshButton").addEventListener("click", refresh);
-    document.getElementById("generateButton").addEventListener("click", generateDraft);
-    els.draft.addEventListener("input", updateCount);
+    function normalizeLatest(data) {
+      const rows = [];
+      addRows(rows, data.officialNews, "ir", "最新IR", "IR");
+      addRows(rows, data.sec, "sec", "重要SEC", "SEC");
+      addRows(rows, data.marketNews, "news", "IONQ NEWS", "NEWS");
+      addRows(rows, data.quantumNews, "quantum", "量子業界", "QNEWS");
+      addRows(rows, data.competitorSec, "competitor", "競合SEC", "CSEC");
+      addRows(rows, data.competitorNews, "competitor", "競合NEWS", "CNEWS");
+      return rows
+        .filter((item) => item.url || item.title)
+        .sort((a, b) => Date.parse(b.publishedAt || b.acceptedAt || 0) - Date.parse(a.publishedAt || a.acceptedAt || 0));
+    }
 
-    // 無料：ChatGPT(課金なしのチャット)をプロンプト＋記事URL入りで開く
-    document.getElementById("chatgptButton").addEventListener("click", () => {
-      if (!state.selected) return;
-      const prompt = chatgptPrompt(state.selected);
-      window.open("https://chatgpt.com/?q=" + encodeURIComponent(prompt), "_blank", "noopener");
-    });
+    function addRows(rows, list, category, label, type) {
+      (list || []).forEach((raw) => {
+        const title = raw.title || [raw.ticker, raw.form, raw.description].filter(Boolean).join(" ");
+        const source = raw.source || raw.companyName || raw.ticker || label;
+        const publishedAt = raw.publishedAt || raw.acceptedAt || raw.filingDate || raw.reportDate || "";
+        const url = raw.url || "";
+        const id = stableId([type, title, source, url, publishedAt, raw.accessionNumber].join("|"));
+        rows.push({
+          ...raw,
+          id,
+          category,
+          label,
+          type,
+          title,
+          source,
+          publishedAt,
+          url
+        });
+      });
+    }
 
-    function chatgptPrompt(item) {
-      const url = /^https?:\/\//i.test(String(item.url || "")) ? item.url : "";
+    function renderItems() {
+      const filtered = state.items.filter((item) => {
+        if (state.category !== "all" && item.category !== state.category) return false;
+        if (!state.query) return true;
+        return `${item.title} ${item.source} ${item.label} ${item.form || ""}`.toLowerCase().includes(state.query);
+      });
+
+      els.items.innerHTML = "";
+      if (!filtered.length) {
+        els.items.innerHTML = '<div class="empty">表示する速報がありません。</div>';
+        return;
+      }
+
+      filtered.forEach((item) => {
+        const row = document.createElement("article");
+        row.className = "item" + (item.id === state.selectedId ? " active" : "");
+        row.innerHTML = `
+          <div class="item-title">${escapeHtml(item.title)}</div>
+          <div class="meta">
+            <span class="badge">${escapeHtml(item.label)}</span>
+            ${item.form ? `<span class="badge">${escapeHtml(item.form)}</span>` : ""}
+            <span>${escapeHtml(item.source || "")}</span>
+            <span>${escapeHtml(formatTime(item.publishedAt))}</span>
+          </div>
+          <div class="item-actions">
+            <label class="posted">
+              <input type="checkbox" ${state.posted.has(item.id) ? "checked" : ""}>
+              投稿済み
+            </label>
+            <button type="button">選択</button>
+          </div>
+        `;
+        row.querySelector("button").addEventListener("click", () => selectItem(item.id));
+        row.querySelector("input").addEventListener("change", (event) => {
+          event.stopPropagation();
+          setPosted(item.id, event.target.checked);
+        });
+        row.addEventListener("dblclick", () => selectItem(item.id));
+        els.items.appendChild(row);
+      });
+    }
+
+    function selectItem(id) {
+      const item = state.items.find((entry) => entry.id === id);
+      if (!item) return;
+      state.selectedId = id;
+      state.latestArticle = null;
+      els.draft.value = "";
+      updateCharCount();
+      setReadStatus("本文取得はまだ実行していません。", "");
+      els.aiStatus.textContent = "待機中";
+      els.articleMetric.textContent = "未確認";
+      els.selected.innerHTML = `
+        <h2>${escapeHtml(item.title)}</h2>
+        <div class="selected-row">
+          <span class="badge">${escapeHtml(item.label)}</span>
+          ${item.form ? `<span class="badge">${escapeHtml(item.form)}</span>` : ""}
+          <span class="status">${escapeHtml(item.source || "")}</span>
+          <span class="status">${escapeHtml(formatTime(item.publishedAt))}</span>
+        </div>
+        <div class="selected-row">
+          ${item.url ? `<a href="${escapeAttr(item.url)}" target="_blank" rel="noreferrer">元記事を開く</a>` : '<span class="warn">URLなし</span>'}
+        </div>
+      `;
+      renderItems();
+    }
+
+    async function testArticleRead() {
+      const item = selectedItem();
+      if (!item) return;
+      setBusy(true, "本文取得中");
+      setReadStatus("記事本文を取りに行っています。", "");
+      try {
+        const url = `${API}/.netlify/functions/report?testFetch=1&url=${encodeURIComponent(item.url)}`;
+        const data = await fetch(url, { cache: "no-store" }).then((r) => r.json());
+        state.latestArticle = data.article || null;
+        showArticleResult(data);
+      } catch (error) {
+        setReadStatus(`本文取得エラー: ${error.message}`, "ng");
+        els.articleMetric.textContent = "失敗";
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function makeReport() {
+      const item = selectedItem();
+      if (!item) return;
+      setBusy(true, "AI生成中");
+      els.aiStatus.textContent = "生成中";
+      setReadStatus("記事本文を読んでからレポートを作っています。", "");
+      try {
+        const response = await fetch(`${API}/.netlify/functions/report`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(item)
+        });
+        const data = await response.json();
+        state.latestArticle = data.article || null;
+        if (!data.ok) {
+          showArticleResult(data);
+          els.aiStatus.textContent = "停止";
+          els.draft.value = failureMessage(data);
+          updateCharCount();
+          return;
+        }
+        els.draft.value = data.draft || "";
+        updateCharCount();
+        showArticleResult(data);
+        els.aiStatus.textContent = "生成完了";
+      } catch (error) {
+        els.aiStatus.textContent = "失敗";
+        els.draft.value = `生成に失敗しました。\n${error.message}`;
+        updateCharCount();
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    function showArticleResult(data) {
+      const article = data.article || {};
+      if (article.ok || data.ok) {
+        setReadStatus(`本文取得OK: ${article.method || "-"} / ${article.chars || 0}文字`, "ok");
+      } else {
+        setReadStatus(`本文取得不可: ${article.error || data.error || "unknown"}`, "ng");
+      }
+      els.articleMetric.textContent = [
+        article.ok ? "OK" : "NG",
+        `${article.chars || 0}文字`,
+        article.method || "",
+        article.finalUrl || ""
+      ].filter(Boolean).join(" / ");
+    }
+
+    function failureMessage(data) {
+      const article = data.article || {};
       return [
-        "次のIONQ($IONQ)関連ニュースを読んで、X用の日本語レポートを書いて。",
-        "見出し：" + (item.title || ""),
-        "出典名：" + (item.source || "不明"),
-        "対象記事URL：" + (url || "(URLが無い場合は下に本文を貼ります)"),
-        "まずURLを開いて本文を読む。Google Newsの中継等で開けない時は『見出し＋出典名』で検索して実記事を見つけて読む。本文の数字・相手先・日付を必ず拾い、本文に無い数字は作らない。報道は二次情報、SEC/公式IRは一次情報として扱う。",
+        "この記事は本文を取得できなかったため、AIレポート生成を止めました。",
         "",
-        "出力フォーマット(*や#などの装飾記号なし・プレーンテキスト)：",
-        "【分類ラベル】",
-        "(要点の見出し1行)",
-        "ひとことで：(1行要約。金額/%/社名/機関名があれば必ず入れる)",
+        `理由: ${article.error || data.error || "unknown"}`,
+        `取得文字数: ${article.chars || 0}`,
         "",
-        "要点：(2〜3文)",
-        "押さえる数字：(金額は$と日本円換算を併記／値動き／量子ビット数／関係機関。無ければ省略)",
-        "ニュース内容：(各社の方式=イオントラップ/超伝導/アニーリング等に踏み込む)",
-        "読み解き：(投資家が見るべき点。IonQ固有の観点で)",
-        "(競合・他社比較の記事のときだけ)IonQの勝ち負け：▼IonQ vs 〇〇($XXX) ・IonQが勝っている点：… ・IonQが負けている点：…",
-        "評価：・凄さ：★★★☆☆ ・株価影響：★★★☆☆ ・関連銘柄：$IONQ/…(RGTI/QBTS等のティッカー記号も拾う)",
-        "結論：(投資家への一言)",
-        "出典：出典名 / " + (url || "(URL)"),
-        "",
-        "IonQ知識：イオントラップ方式。強み=高いゲート忠実度・全結合(all-to-all)・AWS/Azure/Google Cloudの3大クラウド提供。弱み=ゲート速度が超伝導より遅い・量子ビット数の拡張ペース・赤字先行で高バリュエーション。性能はAQ(実効的に使える量子ビット数)で見る。決算は受注残(backlog)/手元現金/赤字縮小が焦点。契約はPoC(実証)か複数年本契約かで価値が段違い。競合：RGTI(Rigetti,超伝導)/QBTS(D-Wave,アニーリング・実売上あり)/QUBT(光・小型)/IBM(超伝導最大手)/GOOGL(超伝導・誤り訂正Willow)/MSFT(Azure＋トポロジカル)/AMZN(Braket＋自社ハード)/HON(Quantinuum,同じイオントラップの直接競合)/NVDA(GPU/CUDA-Q,補完)。"
+        "タイトルだけで薄い投稿案は作りません。元記事を開いて本文を確認するか、別ソースの記事で試してください。"
       ].join("\n");
     }
 
-    document.getElementById("openSourceButton").addEventListener("click", () => {
-      if (state.selected?.url) window.open(state.selected.url, "_blank", "noreferrer");
-    });
-
-    document.getElementById("copyButton").addEventListener("click", async () => {
-      await navigator.clipboard.writeText(els.draft.value);
-      document.getElementById("copyButton").textContent = "コピー済み";
-      setTimeout(() => document.getElementById("copyButton").textContent = "コピー", 1000);
-    });
-
-    els.postedCheck.addEventListener("change", () => {
-      if (!state.selected) return;
-      const id = itemId(state.selected);
-      setPosted(id, els.postedCheck.checked);
-      renderLane(state.selected.type);
-      renderTopFeed();
-    });
-
-    document.getElementById("openXButton").addEventListener("click", async () => {
-      if (!els.draft.value.trim()) await generateDraft();
-      const button = document.getElementById("openXButton");
-      try {
-        await navigator.clipboard.writeText(els.draft.value);
-        button.textContent = "コピー済み";
-        setTimeout(() => button.textContent = "コピーしてX", 1200);
-      } catch (error) {
-        console.warn("Clipboard copy failed before opening X.", error);
-        button.textContent = "コピー失敗";
-        setTimeout(() => button.textContent = "コピーしてX", 1200);
+    function selectedItem() {
+      const item = state.items.find((entry) => entry.id === state.selectedId);
+      if (!item) {
+        setReadStatus("先に速報を選んでください。", "ng");
+        return null;
       }
-      window.open("https://x.com/compose/post", "_blank", "noreferrer");
-    });
+      if (!item.url) {
+        setReadStatus("この速報にはURLがありません。", "ng");
+        return null;
+      }
+      return item;
+    }
 
-    setInterval(() => {
-      state.seconds -= 1;
-      if (state.seconds <= 0) refresh();
-      const s = Math.max(0, state.seconds);
-      els.countdown.textContent = `次回 ${s >= 60 ? `${Math.ceil(s / 60)}分` : `${s}秒`}`;
-    }, 1000);
+    async function copyDraft() {
+      const text = els.draft.value.trim();
+      if (!text) return;
+      await navigator.clipboard.writeText(text);
+      els.aiStatus.textContent = "コピー済み";
+    }
 
-    refresh();
+    function openX() {
+      const text = els.draft.value.trim();
+      if (!text) return;
+      const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
+      window.open(url, "_blank", "noopener,noreferrer");
+    }
+
+    function updateCharCount() {
+      els.charCount.textContent = `${els.draft.value.length}文字`;
+    }
+
+    function setReadStatus(message, type) {
+      els.readStatus.textContent = message;
+      els.readStatus.className = type === "ok" ? "read-ok" : type === "ng" ? "read-ng" : "status";
+    }
+
+    function setBusy(busy, label) {
+      els.testRead.disabled = busy;
+      els.makeReport.disabled = busy;
+      if (label) els.aiStatus.textContent = label;
+    }
+
+    async function loadPostedFromServer() {
+      try {
+        const data = await fetch(`${API}/.netlify/functions/posted`, { cache: "no-store" }).then((r) => r.json());
+        if (data.ok && Array.isArray(data.ids)) {
+          data.ids.forEach((id) => state.posted.add(id));
+          saveLocalPosted();
+          renderItems();
+        }
+      } catch (error) {
+        // Local storage is enough when server state is unavailable.
+      }
+    }
+
+    async function setPosted(id, posted) {
+      if (posted) state.posted.add(id);
+      else state.posted.delete(id);
+      saveLocalPosted();
+      renderItems();
+      try {
+        await fetch(`${API}/.netlify/functions/posted`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id, posted })
+        });
+      } catch (error) {
+        // Keep local state even if the shared store is unavailable.
+      }
+    }
+
+    function loadLocalPosted() {
+      try {
+        const parsed = JSON.parse(localStorage.getItem("ionq-clean-posted") || "[]");
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (error) {
+        return [];
+      }
+    }
+
+    function saveLocalPosted() {
+      localStorage.setItem("ionq-clean-posted", JSON.stringify([...state.posted].slice(-1000)));
+    }
+
+    function stableId(value) {
+      let hash = 2166136261;
+      const text = String(value || "");
+      for (let i = 0; i < text.length; i += 1) {
+        hash ^= text.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+      }
+      return `i${(hash >>> 0).toString(16)}`;
+    }
+
+    function formatTime(value) {
+      if (!value) return "";
+      const ms = Date.parse(value);
+      if (!Number.isFinite(ms)) return String(value).slice(0, 16);
+      return new Intl.DateTimeFormat("ja-JP", {
+        timeZone: "Asia/Tokyo",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit"
+      }).format(new Date(ms));
+    }
+
+    function escapeHtml(value) {
+      return String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+
+    function escapeAttr(value) {
+      return escapeHtml(value).replace(/`/g, "&#96;");
+    }
   </script>
 </body>
 </html>
