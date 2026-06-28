@@ -6,20 +6,22 @@
   <title>IONQ Watchdesk</title>
   <style>
     :root {
-      --bg: #f6f7f4;
+      --bg: #f5f6f3;
       --panel: #ffffff;
+      --panel-2: #fbfcfa;
       --line: #d9ded6;
       --text: #17201b;
-      --muted: #68736c;
-      --accent: #0d766e;
+      --muted: #66736b;
+      --accent: #0c756d;
       --accent-soft: #dff2ee;
       --warn: #9b5a00;
-      --danger: #a23434;
-      --good: #167046;
+      --danger: #a33b3b;
+      --ok: #147246;
       --shadow: 0 10px 24px rgba(20, 34, 28, .08);
     }
 
     * { box-sizing: border-box; }
+    html, body { min-height: 100%; }
     body {
       margin: 0;
       background: var(--bg);
@@ -29,19 +31,15 @@
       line-height: 1.55;
     }
 
-    button, input, textarea, select {
-      font: inherit;
-    }
-
+    button, input, textarea { font: inherit; }
     button {
       border: 1px solid var(--line);
       background: var(--panel);
       color: var(--text);
       border-radius: 6px;
-      padding: 8px 11px;
+      padding: 8px 10px;
       cursor: pointer;
     }
-
     button:hover { border-color: var(--accent); }
     button.primary {
       background: var(--accent);
@@ -49,10 +47,8 @@
       color: #fff;
       font-weight: 700;
     }
-    button:disabled {
-      opacity: .55;
-      cursor: not-allowed;
-    }
+    button.ghost { background: var(--panel-2); }
+    button:disabled { opacity: .55; cursor: not-allowed; }
 
     a { color: var(--accent); text-decoration: none; }
     a:hover { text-decoration: underline; }
@@ -60,85 +56,97 @@
     .app {
       min-height: 100vh;
       display: grid;
-      grid-template-columns: 390px minmax(0, 1fr);
+      grid-template-columns: 260px minmax(360px, 1fr) 390px;
     }
 
-    .feed {
+    .side {
       border-right: 1px solid var(--line);
-      background: #fbfcfa;
-      min-width: 0;
-      display: flex;
-      flex-direction: column;
-      height: 100vh;
-      position: sticky;
-      top: 0;
-    }
-
-    .feed-head {
-      padding: 14px 14px 10px;
-      border-bottom: 1px solid var(--line);
+      background: var(--panel-2);
+      padding: 14px;
       display: grid;
-      gap: 10px;
-    }
-
-    .brand {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 10px;
+      align-content: start;
+      gap: 14px;
+      min-height: 100vh;
     }
 
     .brand h1 {
-      margin: 0;
-      font-size: 18px;
+      margin: 0 0 4px;
+      font-size: 19px;
       letter-spacing: 0;
     }
-
-    .status {
+    .brand p {
+      margin: 0;
       color: var(--muted);
       font-size: 12px;
     }
 
+    .status-box {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      border-radius: 8px;
+      padding: 10px;
+      display: grid;
+      gap: 5px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
     .tabs {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 6px;
+      gap: 7px;
     }
-
     .tab {
-      padding: 7px 4px;
-      font-size: 12px;
-      text-align: center;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .tab.active {
-      background: var(--accent-soft);
-      border-color: var(--accent);
-      color: #064d47;
-      font-weight: 700;
-    }
-
-    .tools {
-      display: grid;
-      grid-template-columns: 1fr auto;
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
       gap: 8px;
+      text-align: left;
+      min-height: 38px;
+    }
+    .tab.active {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      font-weight: 700;
+      color: #064d47;
+    }
+    .count {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 400;
     }
 
+    .main {
+      min-width: 0;
+      height: 100vh;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      border-right: 1px solid var(--line);
+    }
+
+    .toolbar {
+      padding: 12px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--line);
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      gap: 8px;
+      align-items: center;
+    }
     .search {
+      width: 100%;
       border: 1px solid var(--line);
       border-radius: 6px;
-      padding: 8px 10px;
-      background: #fff;
+      padding: 9px 10px;
       min-width: 0;
+      background: #fff;
     }
 
-    .items {
+    .feed {
       overflow: auto;
       padding: 10px;
       display: grid;
+      align-content: start;
       gap: 8px;
     }
 
@@ -146,22 +154,19 @@
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 8px;
-      padding: 10px;
+      padding: 11px;
       display: grid;
-      gap: 7px;
+      gap: 8px;
     }
-
     .item.active {
       border-color: var(--accent);
       box-shadow: var(--shadow);
     }
-
     .item-title {
       font-weight: 700;
-      line-height: 1.45;
+      line-height: 1.42;
       overflow-wrap: anywhere;
     }
-
     .meta {
       display: flex;
       flex-wrap: wrap;
@@ -169,21 +174,18 @@
       color: var(--muted);
       font-size: 12px;
     }
-
     .badge {
       border: 1px solid var(--line);
+      background: #f8f9f6;
       border-radius: 999px;
       padding: 1px 7px;
-      background: #f7f8f5;
     }
-
     .item-actions {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
     }
-
     .posted {
       display: inline-flex;
       align-items: center;
@@ -195,302 +197,218 @@
 
     .detail {
       min-width: 0;
-      padding: 18px;
-      display: grid;
-      grid-template-rows: auto auto minmax(0, 1fr);
-      gap: 14px;
       height: 100vh;
-    }
-
-    .selected {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 14px;
-      display: grid;
-      gap: 10px;
-    }
-
-    .selected h2 {
-      margin: 0;
-      font-size: 19px;
-      line-height: 1.4;
-      overflow-wrap: anywhere;
-    }
-
-    .selected-row {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .read-box {
-      background: #f9faf7;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 12px;
-      display: grid;
-      gap: 8px;
-    }
-
-    .read-ok { color: var(--good); font-weight: 700; }
-    .read-ng { color: var(--danger); font-weight: 700; }
-
-    .report-area {
-      min-height: 0;
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) 300px;
-      gap: 14px;
-    }
-
-    .draft-panel, .side-panel {
-      min-height: 0;
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 8px;
+      background: var(--panel-2);
       display: grid;
       grid-template-rows: auto minmax(0, 1fr);
     }
-
-    .panel-head {
-      border-bottom: 1px solid var(--line);
-      padding: 10px 12px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .panel-head strong { font-size: 14px; }
-
-    textarea {
-      width: 100%;
-      height: 100%;
-      min-height: 380px;
-      resize: none;
-      border: 0;
+    .detail-head {
       padding: 14px;
-      outline: 0;
-      line-height: 1.65;
-      background: #fff;
-      color: var(--text);
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+      display: grid;
+      gap: 8px;
     }
-
-    .side-content {
-      padding: 12px;
+    .detail-head h2 {
+      margin: 0;
+      font-size: 17px;
+      line-height: 1.42;
+      overflow-wrap: anywhere;
+    }
+    .detail-body {
       overflow: auto;
+      padding: 14px;
       display: grid;
       align-content: start;
       gap: 12px;
     }
-
-    .metric {
+    .card {
       border: 1px solid var(--line);
       border-radius: 8px;
-      padding: 10px;
-      background: #fbfcfa;
+      background: var(--panel);
+      padding: 12px;
+      display: grid;
+      gap: 8px;
     }
-
-    .metric b { display: block; margin-bottom: 4px; }
-    .metric span { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
-
+    .card h3 {
+      margin: 0;
+      font-size: 14px;
+    }
+    .url-box {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #f8f9f6;
+      padding: 9px;
+      color: var(--muted);
+      overflow-wrap: anywhere;
+      font-size: 12px;
+    }
+    textarea {
+      width: 100%;
+      min-height: 210px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 10px;
+      resize: vertical;
+      line-height: 1.6;
+      background: #fff;
+      color: var(--text);
+    }
+    .stack { display: grid; gap: 8px; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .muted { color: var(--muted); font-size: 12px; }
+    .ok { color: var(--ok); font-weight: 700; }
+    .warn { color: var(--warn); font-weight: 700; }
     .empty {
-      padding: 22px;
+      padding: 24px;
       color: var(--muted);
       text-align: center;
     }
 
-    .warn {
-      color: var(--warn);
-      font-weight: 700;
-    }
-
-    @media (max-width: 900px) {
+    @media (max-width: 980px) {
       .app { grid-template-columns: 1fr; }
-      .feed {
-        position: static;
+      .side, .main, .detail {
         height: auto;
-        max-height: 58vh;
+        min-height: auto;
         border-right: 0;
-        border-bottom: 1px solid var(--line);
       }
-      .detail {
-        height: auto;
-        min-height: 70vh;
-        padding: 12px;
-      }
-      .report-area { grid-template-columns: 1fr; }
-      .side-panel { grid-template-rows: auto auto; }
-      textarea { min-height: 420px; }
+      .side { border-bottom: 1px solid var(--line); }
+      .main { border-bottom: 1px solid var(--line); }
+      .tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .toolbar { grid-template-columns: 1fr auto; }
+      .toolbar .wide { grid-column: 1 / -1; }
     }
   </style>
 </head>
 <body>
   <main class="app">
-    <section class="feed">
-      <div class="feed-head">
-        <div class="brand">
-          <h1>IONQ Watchdesk</h1>
-          <span id="updated" class="status">起動中</span>
-        </div>
-        <div class="tabs" id="tabs"></div>
-        <div class="tools">
-          <input id="search" class="search" type="search" placeholder="検索">
-          <button id="reload" title="更新">更新</button>
-        </div>
+    <aside class="side">
+      <div class="brand">
+        <h1>IONQ Watchdesk</h1>
+        <p>情報収集と投稿元ネタ管理</p>
       </div>
-      <div id="items" class="items"></div>
+      <div class="status-box">
+        <div id="version">version: clean-collector-20260629</div>
+        <div id="updated">updated: --</div>
+        <div id="endpoint">source: --</div>
+      </div>
+      <div id="tabs" class="tabs"></div>
+    </aside>
+
+    <section class="main">
+      <div class="toolbar">
+        <input id="search" class="search wide" type="search" placeholder="ニュース検索">
+        <button id="reload" class="primary">更新</button>
+        <button id="clearPosted" class="ghost">投稿済みクリア</button>
+      </div>
+      <div id="feed" class="feed"></div>
     </section>
 
     <section class="detail">
-      <div id="selected" class="selected">
-        <div class="empty">左の速報を選ぶと、記事本文を読んで深掘りレポートを作れます。</div>
+      <div id="detailHead" class="detail-head">
+        <h2>ニュースを選択</h2>
+        <div class="muted">記事URLをGPTsへ渡して、深掘りレポートを作る運用に戻します。</div>
       </div>
-
-      <div class="read-box">
-        <div id="readStatus" class="status">本文取得はまだ実行していません。</div>
-        <div class="selected-row">
-          <button id="testRead">本文取得テスト</button>
-          <button id="makeReport" class="primary">深掘りレポート生成</button>
-          <button id="copyDraft">コピー</button>
-          <button id="openX">Xで開く</button>
+      <div class="detail-body">
+        <div class="card">
+          <h3>GPTs用コピー</h3>
+          <textarea id="gptsText" readonly>左のニュースを選択してください。</textarea>
+          <div class="row">
+            <button id="copyGpts" class="primary">GPTs用テキストをコピー</button>
+            <button id="copyUrl">URLだけコピー</button>
+            <button id="openUrl">元記事を開く</button>
+          </div>
+          <div id="copyStatus" class="muted">待機中</div>
         </div>
-      </div>
 
-      <div class="report-area">
-        <section class="draft-panel">
-          <div class="panel-head">
-            <strong>投稿案</strong>
-            <span id="charCount" class="status">0文字</span>
-          </div>
-          <textarea id="draft" placeholder="ここにAIレポートが入ります。"></textarea>
-        </section>
-
-        <aside class="side-panel">
-          <div class="panel-head">
-            <strong>確認</strong>
-            <span id="aiStatus" class="status">待機中</span>
-          </div>
-          <div class="side-content">
-            <div class="metric">
-              <b>本文取得</b>
-              <span id="articleMetric">未確認</span>
-            </div>
-            <div class="metric">
-              <b>運用ルール</b>
-              <span>記事本文が取れた時だけ生成。取れない記事は薄い作文を作らず止めます。</span>
-            </div>
-            <div class="metric">
-              <b>投稿済み</b>
-              <span>左のチェックは元ネタ単位で保存します。PCとスマホで共有される場合があります。</span>
-            </div>
-          </div>
-        </aside>
+        <div class="card">
+          <h3>運用メモ</h3>
+          <div class="muted">このサイトは集計が主役。レポート作成はGPTsに任せます。</div>
+          <div class="muted">投稿済みチェックは「元ネタに対して投稿したか」を管理するために使います。</div>
+        </div>
       </div>
     </section>
   </main>
 
   <script>
-    const APP_VERSION = "clean-20260629-0118";
+    const APP_VERSION = "clean-collector-20260629";
     const PUBLIC_ORIGIN = "https://ionqrnews.netlify.app";
-    const IS_LOCAL_PREVIEW = location.protocol === "file:" ||
-      location.hostname === "127.0.0.1" ||
-      location.hostname === "localhost";
-    const API = IS_LOCAL_PREVIEW ? PUBLIC_ORIGIN : "";
-    const CATEGORIES = [
-      { id: "all", label: "全部" },
-      { id: "ir", label: "最新IR" },
-      { id: "sec", label: "重要SEC" },
-      { id: "news", label: "IONQ NEWS" },
-      { id: "quantum", label: "量子業界" },
-      { id: "competitor", label: "競合" }
-    ];
+    const isLocalPreview = location.protocol === "file:" || location.hostname === "127.0.0.1" || location.hostname === "localhost";
+    const API = isLocalPreview ? PUBLIC_ORIGIN : "";
+    const latestEndpoint = API + "/.netlify/functions/latest-ionq";
+    const postedEndpoint = API + "/.netlify/functions/posted";
 
+    const labels = {
+      all: "全部",
+      ir: "最新IR",
+      sec: "重要SEC",
+      news: "IONQ NEWS",
+      quantum: "量子業界",
+      competitor: "競合",
+      posted: "投稿済み"
+    };
+
+    const categories = ["all", "ir", "sec", "news", "quantum", "competitor", "posted"];
     const state = {
       items: [],
       posted: new Set(loadLocalPosted()),
-      category: "all",
-      query: "",
       selectedId: "",
-      latestArticle: null
+      category: "all",
+      query: ""
     };
 
-    const els = {
-      tabs: document.getElementById("tabs"),
-      items: document.getElementById("items"),
+    const el = {
       updated: document.getElementById("updated"),
+      endpoint: document.getElementById("endpoint"),
+      tabs: document.getElementById("tabs"),
+      feed: document.getElementById("feed"),
       search: document.getElementById("search"),
       reload: document.getElementById("reload"),
-      selected: document.getElementById("selected"),
-      testRead: document.getElementById("testRead"),
-      makeReport: document.getElementById("makeReport"),
-      copyDraft: document.getElementById("copyDraft"),
-      openX: document.getElementById("openX"),
-      draft: document.getElementById("draft"),
-      charCount: document.getElementById("charCount"),
-      readStatus: document.getElementById("readStatus"),
-      aiStatus: document.getElementById("aiStatus"),
-      articleMetric: document.getElementById("articleMetric")
+      clearPosted: document.getElementById("clearPosted"),
+      detailHead: document.getElementById("detailHead"),
+      gptsText: document.getElementById("gptsText"),
+      copyGpts: document.getElementById("copyGpts"),
+      copyUrl: document.getElementById("copyUrl"),
+      openUrl: document.getElementById("openUrl"),
+      copyStatus: document.getElementById("copyStatus")
     };
 
     init();
 
     function init() {
-      els.updated.textContent = APP_VERSION;
-      renderTabs();
+      document.getElementById("version").textContent = "version: " + APP_VERSION;
+      el.endpoint.textContent = "source: " + latestEndpoint;
       bindEvents();
+      renderTabs();
       loadPostedFromServer();
       refresh();
       setInterval(refresh, 60000);
     }
 
     function bindEvents() {
-      els.reload.addEventListener("click", refresh);
-      els.search.addEventListener("input", () => {
-        state.query = els.search.value.trim().toLowerCase();
-        renderItems();
+      el.reload.addEventListener("click", refresh);
+      el.search.addEventListener("input", function () {
+        state.query = el.search.value.trim().toLowerCase();
+        renderFeed();
       });
-      els.testRead.addEventListener("click", testArticleRead);
-      els.makeReport.addEventListener("click", makeReport);
-      els.copyDraft.addEventListener("click", copyDraft);
-      els.openX.addEventListener("click", openX);
-      els.draft.addEventListener("input", updateCharCount);
-    }
-
-    function renderTabs() {
-      els.tabs.innerHTML = "";
-      CATEGORIES.forEach((cat) => {
-        const button = document.createElement("button");
-        button.className = "tab" + (cat.id === state.category ? " active" : "");
-        button.textContent = cat.label;
-        button.addEventListener("click", () => {
-          state.category = cat.id;
-          renderTabs();
-          renderItems();
-        });
-        els.tabs.appendChild(button);
-      });
+      el.copyGpts.addEventListener("click", copyGptsText);
+      el.copyUrl.addEventListener("click", copySelectedUrl);
+      el.openUrl.addEventListener("click", openSelectedUrl);
+      el.clearPosted.addEventListener("click", clearPosted);
     }
 
     async function refresh() {
-      els.updated.textContent = "更新中";
-      const endpoint = `${API}/.netlify/functions/latest-ionq`;
+      el.updated.textContent = "updated: loading";
       try {
-        const data = await fetchJson(endpoint, 10000);
+        const data = await fetchJson(latestEndpoint, 12000);
         state.items = normalizeLatest(data);
-        els.updated.textContent = formatTime(data.updatedAt || new Date().toISOString());
-        renderItems();
-        if (!state.selectedId && state.items[0]) selectItem(state.items[0].id);
+        el.updated.textContent = "updated: " + formatTime(data.updatedAt || new Date().toISOString());
+        renderTabs();
+        renderFeed();
+        if (!state.selectedId && state.items.length) selectItem(state.items[0].id);
       } catch (error) {
-        els.updated.textContent = "取得失敗";
-        els.items.innerHTML = `
-          <div class="empty">
-            <div>速報取得に失敗しました。</div>
-            <div class="warn">${escapeHtml(error.message)}</div>
-            <div class="status">${escapeHtml(endpoint)}</div>
-          </div>
-        `;
+        el.updated.textContent = "updated: failed";
+        el.feed.innerHTML = errorBox("速報取得に失敗しました", error.message, latestEndpoint);
       }
     }
 
@@ -503,257 +421,193 @@
       addRows(rows, data.competitorSec, "competitor", "競合SEC", "CSEC");
       addRows(rows, data.competitorNews, "competitor", "競合NEWS", "CNEWS");
       return rows
-        .filter((item) => item.url || item.title)
-        .sort((a, b) => Date.parse(b.publishedAt || b.acceptedAt || 0) - Date.parse(a.publishedAt || a.acceptedAt || 0));
+        .filter(function (item) { return item.title || item.url; })
+        .sort(function (a, b) {
+          return Date.parse(b.publishedAt || b.acceptedAt || 0) - Date.parse(a.publishedAt || a.acceptedAt || 0);
+        });
     }
 
     function addRows(rows, list, category, label, type) {
-      (list || []).forEach((raw) => {
+      (list || []).forEach(function (raw) {
         const title = raw.title || [raw.ticker, raw.form, raw.description].filter(Boolean).join(" ");
         const source = raw.source || raw.companyName || raw.ticker || label;
         const publishedAt = raw.publishedAt || raw.acceptedAt || raw.filingDate || raw.reportDate || "";
         const url = raw.url || "";
         const id = stableId([type, title, source, url, publishedAt, raw.accessionNumber].join("|"));
-        rows.push({
-          ...raw,
-          id,
-          category,
-          label,
-          type,
-          title,
-          source,
-          publishedAt,
-          url
-        });
+        rows.push(Object.assign({}, raw, {
+          id: id,
+          category: category,
+          label: label,
+          type: type,
+          title: title,
+          source: source,
+          publishedAt: publishedAt,
+          url: url
+        }));
       });
     }
 
-    function renderItems() {
-      const filtered = state.items.filter((item) => {
-        if (state.category !== "all" && item.category !== state.category) return false;
-        if (!state.query) return true;
-        return `${item.title} ${item.source} ${item.label} ${item.form || ""}`.toLowerCase().includes(state.query);
+    function renderTabs() {
+      const counts = getCounts();
+      el.tabs.innerHTML = "";
+      categories.forEach(function (cat) {
+        const button = document.createElement("button");
+        button.className = "tab" + (state.category === cat ? " active" : "");
+        button.innerHTML = "<span>" + escapeHtml(labels[cat]) + "</span><span class=\"count\">" + (counts[cat] || 0) + "</span>";
+        button.addEventListener("click", function () {
+          state.category = cat;
+          renderTabs();
+          renderFeed();
+        });
+        el.tabs.appendChild(button);
       });
+    }
 
-      els.items.innerHTML = "";
-      if (!filtered.length) {
-        els.items.innerHTML = '<div class="empty">表示する速報がありません。</div>';
+    function getCounts() {
+      const counts = { all: state.items.length, posted: 0 };
+      state.items.forEach(function (item) {
+        counts[item.category] = (counts[item.category] || 0) + 1;
+        if (state.posted.has(item.id)) counts.posted += 1;
+      });
+      return counts;
+    }
+
+    function renderFeed() {
+      const items = filteredItems();
+      if (!items.length) {
+        el.feed.innerHTML = "<div class=\"empty\">表示するニュースがありません。</div>";
         return;
       }
 
-      filtered.forEach((item) => {
-        const row = document.createElement("article");
-        row.className = "item" + (item.id === state.selectedId ? " active" : "");
-        row.innerHTML = `
-          <div class="item-title">${escapeHtml(item.title)}</div>
-          <div class="meta">
-            <span class="badge">${escapeHtml(item.label)}</span>
-            ${item.form ? `<span class="badge">${escapeHtml(item.form)}</span>` : ""}
-            <span>${escapeHtml(item.source || "")}</span>
-            <span>${escapeHtml(formatTime(item.publishedAt))}</span>
-          </div>
-          <div class="item-actions">
-            <label class="posted">
-              <input type="checkbox" ${state.posted.has(item.id) ? "checked" : ""}>
-              投稿済み
-            </label>
-            <button type="button">選択</button>
-          </div>
-        `;
-        row.querySelector("button").addEventListener("click", () => selectItem(item.id));
-        row.querySelector("input").addEventListener("change", (event) => {
-          event.stopPropagation();
+      el.feed.innerHTML = "";
+      items.forEach(function (item) {
+        const card = document.createElement("article");
+        card.className = "item" + (item.id === state.selectedId ? " active" : "");
+        card.innerHTML = [
+          "<div class=\"item-title\">" + escapeHtml(item.title) + "</div>",
+          "<div class=\"meta\">",
+          "<span class=\"badge\">" + escapeHtml(item.label) + "</span>",
+          item.form ? "<span class=\"badge\">" + escapeHtml(item.form) + "</span>" : "",
+          "<span>" + escapeHtml(item.source || "") + "</span>",
+          "<span>" + escapeHtml(formatTime(item.publishedAt)) + "</span>",
+          "</div>",
+          "<div class=\"item-actions\">",
+          "<label class=\"posted\"><input type=\"checkbox\" " + (state.posted.has(item.id) ? "checked" : "") + ">投稿済み</label>",
+          "<div class=\"row\"><button type=\"button\" data-act=\"copy\">URL取得</button><button type=\"button\" data-act=\"select\">選択</button></div>",
+          "</div>"
+        ].join("");
+
+        card.querySelector("[data-act='select']").addEventListener("click", function () { selectItem(item.id); });
+        card.querySelector("[data-act='copy']").addEventListener("click", function () {
+          selectItem(item.id);
+          copyGptsText();
+        });
+        card.querySelector("input").addEventListener("change", function (event) {
           setPosted(item.id, event.target.checked);
         });
-        row.addEventListener("dblclick", () => selectItem(item.id));
-        els.items.appendChild(row);
+        card.addEventListener("dblclick", function () { selectItem(item.id); });
+        el.feed.appendChild(card);
+      });
+    }
+
+    function filteredItems() {
+      return state.items.filter(function (item) {
+        if (state.category === "posted" && !state.posted.has(item.id)) return false;
+        if (state.category !== "all" && state.category !== "posted" && item.category !== state.category) return false;
+        if (!state.query) return true;
+        return [item.title, item.source, item.label, item.form, item.ticker].join(" ").toLowerCase().includes(state.query);
       });
     }
 
     function selectItem(id) {
-      const item = state.items.find((entry) => entry.id === id);
+      const item = findItem(id);
       if (!item) return;
       state.selectedId = id;
-      state.latestArticle = null;
-      els.draft.value = "";
-      updateCharCount();
-      setReadStatus("本文取得はまだ実行していません。", "");
-      els.aiStatus.textContent = "待機中";
-      els.articleMetric.textContent = "未確認";
-      els.selected.innerHTML = `
-        <h2>${escapeHtml(item.title)}</h2>
-        <div class="selected-row">
-          <span class="badge">${escapeHtml(item.label)}</span>
-          ${item.form ? `<span class="badge">${escapeHtml(item.form)}</span>` : ""}
-          <span class="status">${escapeHtml(item.source || "")}</span>
-          <span class="status">${escapeHtml(formatTime(item.publishedAt))}</span>
-        </div>
-        <div class="selected-row">
-          ${item.url ? `<a href="${escapeAttr(item.url)}" target="_blank" rel="noreferrer">元記事を開く</a>` : '<span class="warn">URLなし</span>'}
-        </div>
-      `;
-      renderItems();
+      el.detailHead.innerHTML = [
+        "<h2>" + escapeHtml(item.title) + "</h2>",
+        "<div class=\"meta\">",
+        "<span class=\"badge\">" + escapeHtml(item.label) + "</span>",
+        item.form ? "<span class=\"badge\">" + escapeHtml(item.form) + "</span>" : "",
+        "<span>" + escapeHtml(item.source || "") + "</span>",
+        "<span>" + escapeHtml(formatTime(item.publishedAt)) + "</span>",
+        "</div>",
+        item.url ? "<div class=\"url-box\">" + escapeHtml(item.url) + "</div>" : "<div class=\"warn\">URLなし</div>"
+      ].join("");
+      el.gptsText.value = buildGptsText(item);
+      el.copyStatus.textContent = "選択中";
+      renderFeed();
     }
 
-    async function testArticleRead() {
-      const item = selectedItem();
-      if (!item) return;
-      setBusy(true, "本文取得中");
-      setReadStatus("記事本文を取りに行っています。", "");
-      try {
-        const url = `${API}/.netlify/functions/report?testFetch=1&url=${encodeURIComponent(item.url)}`;
-        const data = await fetchJson(url, 20000);
-        state.latestArticle = data.article || null;
-        showArticleResult(data);
-      } catch (error) {
-        setReadStatus(`本文取得エラー: ${error.message}`, "ng");
-        els.articleMetric.textContent = "失敗";
-      } finally {
-        setBusy(false);
-      }
-    }
-
-    async function makeReport() {
-      const item = selectedItem();
-      if (!item) return;
-      setBusy(true, "AI生成中");
-      els.aiStatus.textContent = "生成中";
-      setReadStatus("記事本文を読んでからレポートを作っています。", "");
-      try {
-        const response = await fetchWithTimeout(`${API}/.netlify/functions/report`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(item)
-        }, 45000);
-        const data = await response.json();
-        state.latestArticle = data.article || null;
-        if (!data.ok) {
-          showArticleResult(data);
-          els.aiStatus.textContent = "停止";
-          els.draft.value = failureMessage(data);
-          updateCharCount();
-          return;
-        }
-        els.draft.value = data.draft || "";
-        updateCharCount();
-        showArticleResult(data);
-        els.aiStatus.textContent = "生成完了";
-      } catch (error) {
-        els.aiStatus.textContent = "失敗";
-        els.draft.value = `生成に失敗しました。\n${error.message}`;
-        updateCharCount();
-      } finally {
-        setBusy(false);
-      }
-    }
-
-    function showArticleResult(data) {
-      const article = data.article || {};
-      if (article.ok || data.ok) {
-        setReadStatus(`本文取得OK: ${article.method || "-"} / ${article.chars || 0}文字`, "ok");
-      } else {
-        setReadStatus(`本文取得不可: ${article.error || data.error || "unknown"}`, "ng");
-      }
-      els.articleMetric.textContent = [
-        article.ok ? "OK" : "NG",
-        `${article.chars || 0}文字`,
-        article.method || "",
-        article.finalUrl || ""
-      ].filter(Boolean).join(" / ");
-    }
-
-    function failureMessage(data) {
-      const article = data.article || {};
+    function buildGptsText(item) {
       return [
-        "この記事は本文を取得できなかったため、AIレポート生成を止めました。",
+        "以下の記事URLを読んで、IonQ/量子業界の投資家向けに日本語レポートを作成してください。",
         "",
-        `理由: ${article.error || data.error || "unknown"}`,
-        `取得文字数: ${article.chars || 0}`,
+        "分類: " + (item.label || item.type || ""),
+        "タイトル: " + (item.title || ""),
+        "出典: " + (item.source || ""),
+        "公開時刻: " + (formatTime(item.publishedAt) || ""),
+        item.form ? "SEC form: " + item.form : "",
+        item.ticker ? "ticker: " + item.ticker : "",
         "",
-        "タイトルだけで薄い投稿案は作りません。元記事を開いて本文を確認するか、別ソースの記事で試してください。"
-      ].join("\n");
+        "URL:",
+        item.url || "",
+        "",
+        "条件:",
+        "- 必ずURL先の記事本文を読んでください",
+        "- 本文にない数字は捏造しないでください",
+        "- IonQとの関係、競合比較、株価材料としての見方を具体的に書いてください",
+        "- X長文投稿向けにしてください"
+      ].filter(Boolean).join("\n");
+    }
+
+    async function copyGptsText() {
+      const item = selectedItem();
+      if (!item) return;
+      await copyText(buildGptsText(item));
+      el.copyStatus.innerHTML = "<span class=\"ok\">GPTs用テキストをコピーしました</span>";
+    }
+
+    async function copySelectedUrl() {
+      const item = selectedItem();
+      if (!item) return;
+      await copyText(item.url || "");
+      el.copyStatus.innerHTML = "<span class=\"ok\">URLをコピーしました</span>";
+    }
+
+    function openSelectedUrl() {
+      const item = selectedItem();
+      if (!item || !item.url) return;
+      window.open(item.url, "_blank", "noopener,noreferrer");
     }
 
     function selectedItem() {
-      const item = state.items.find((entry) => entry.id === state.selectedId);
+      const item = findItem(state.selectedId);
       if (!item) {
-        setReadStatus("先に速報を選んでください。", "ng");
+        el.copyStatus.innerHTML = "<span class=\"warn\">先にニュースを選択してください</span>";
         return null;
       }
       if (!item.url) {
-        setReadStatus("この速報にはURLがありません。", "ng");
+        el.copyStatus.innerHTML = "<span class=\"warn\">このニュースにはURLがありません</span>";
         return null;
       }
       return item;
     }
 
-    async function copyDraft() {
-      const text = els.draft.value.trim();
-      if (!text) return;
-      await navigator.clipboard.writeText(text);
-      els.aiStatus.textContent = "コピー済み";
-    }
-
-    function openX() {
-      const text = els.draft.value.trim();
-      if (!text) return;
-      const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`;
-      window.open(url, "_blank", "noopener,noreferrer");
-    }
-
-    function updateCharCount() {
-      els.charCount.textContent = `${els.draft.value.length}文字`;
-    }
-
-    function setReadStatus(message, type) {
-      els.readStatus.textContent = message;
-      els.readStatus.className = type === "ok" ? "read-ok" : type === "ng" ? "read-ng" : "status";
-    }
-
-    function setBusy(busy, label) {
-      els.testRead.disabled = busy;
-      els.makeReport.disabled = busy;
-      if (label) els.aiStatus.textContent = label;
+    function findItem(id) {
+      return state.items.find(function (item) { return item.id === id; });
     }
 
     async function loadPostedFromServer() {
       try {
-        const data = await fetchJson(`${API}/.netlify/functions/posted`, 8000);
+        const data = await fetchJson(postedEndpoint, 8000);
         if (data.ok && Array.isArray(data.ids)) {
-          data.ids.forEach((id) => state.posted.add(id));
+          data.ids.forEach(function (id) { state.posted.add(id); });
           saveLocalPosted();
-          renderItems();
+          renderTabs();
+          renderFeed();
         }
       } catch (error) {
-        // Local storage is enough when server state is unavailable.
-      }
-    }
-
-    async function fetchJson(url, timeoutMs) {
-      const response = await fetchWithTimeout(url, { cache: "no-store" }, timeoutMs);
-      const text = await response.text();
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${text.slice(0, 120)}`);
-      }
-      try {
-        return JSON.parse(text);
-      } catch (error) {
-        throw new Error(`JSONではない応答: ${text.slice(0, 120)}`);
-      }
-    }
-
-    async function fetchWithTimeout(url, options, timeoutMs) {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), timeoutMs);
-      try {
-        return await fetch(url, { ...(options || {}), signal: controller.signal });
-      } catch (error) {
-        if (error.name === "AbortError") {
-          throw new Error(`タイムアウト: ${url}`);
-        }
-        throw error;
-      } finally {
-        clearTimeout(timeout);
+        // Local state is enough if shared state is unavailable.
       }
     }
 
@@ -761,21 +615,66 @@
       if (posted) state.posted.add(id);
       else state.posted.delete(id);
       saveLocalPosted();
-      renderItems();
+      renderTabs();
+      renderFeed();
       try {
-        await fetch(`${API}/.netlify/functions/posted`, {
+        await fetch(postedEndpoint, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ id, posted })
+          body: JSON.stringify({ id: id, posted: posted })
         });
       } catch (error) {
-        // Keep local state even if the shared store is unavailable.
+        // Keep local state.
       }
+    }
+
+    function clearPosted() {
+      state.posted.clear();
+      saveLocalPosted();
+      renderTabs();
+      renderFeed();
+    }
+
+    async function fetchJson(url, timeoutMs) {
+      const response = await fetchWithTimeout(url, { cache: "no-store" }, timeoutMs);
+      const text = await response.text();
+      if (!response.ok) throw new Error("HTTP " + response.status + ": " + text.slice(0, 120));
+      try {
+        return JSON.parse(text);
+      } catch (error) {
+        throw new Error("JSONではない応答: " + text.slice(0, 120));
+      }
+    }
+
+    async function fetchWithTimeout(url, options, timeoutMs) {
+      const controller = new AbortController();
+      const timer = setTimeout(function () { controller.abort(); }, timeoutMs);
+      try {
+        return await fetch(url, Object.assign({}, options || {}, { signal: controller.signal }));
+      } catch (error) {
+        if (error.name === "AbortError") throw new Error("タイムアウト: " + url);
+        throw error;
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    async function copyText(text) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+        return;
+      }
+      const area = document.createElement("textarea");
+      area.value = text;
+      document.body.appendChild(area);
+      area.select();
+      document.execCommand("copy");
+      area.remove();
     }
 
     function loadLocalPosted() {
       try {
-        const parsed = JSON.parse(localStorage.getItem("ionq-clean-posted") || "[]");
+        const parsed = JSON.parse(localStorage.getItem("ionq-collector-posted") || "[]");
         return Array.isArray(parsed) ? parsed : [];
       } catch (error) {
         return [];
@@ -783,7 +682,7 @@
     }
 
     function saveLocalPosted() {
-      localStorage.setItem("ionq-clean-posted", JSON.stringify([...state.posted].slice(-1000)));
+      localStorage.setItem("ionq-collector-posted", JSON.stringify(Array.from(state.posted).slice(-1000)));
     }
 
     function stableId(value) {
@@ -793,7 +692,7 @@
         hash ^= text.charCodeAt(i);
         hash = Math.imul(hash, 16777619);
       }
-      return `i${(hash >>> 0).toString(16)}`;
+      return "i" + (hash >>> 0).toString(16);
     }
 
     function formatTime(value) {
@@ -809,6 +708,16 @@
       }).format(new Date(ms));
     }
 
+    function errorBox(title, message, url) {
+      return [
+        "<div class=\"empty\">",
+        "<div class=\"warn\">" + escapeHtml(title) + "</div>",
+        "<div>" + escapeHtml(message || "") + "</div>",
+        "<div class=\"muted\">" + escapeHtml(url || "") + "</div>",
+        "</div>"
+      ].join("");
+    }
+
     function escapeHtml(value) {
       return String(value || "")
         .replace(/&/g, "&amp;")
@@ -816,10 +725,6 @@
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#39;");
-    }
-
-    function escapeAttr(value) {
-      return escapeHtml(value).replace(/`/g, "&#96;");
     }
   </script>
 </body>
