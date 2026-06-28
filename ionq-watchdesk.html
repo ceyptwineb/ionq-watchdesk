@@ -471,6 +471,8 @@
     const API_URL = LOCAL_VIEW ? PUBLIC_API : "/.netlify/functions/latest-ionq";
     // 「投稿済み」状態を端末間で共有する保存API
     const POSTED_API = LOCAL_VIEW ? `${PUBLIC_ORIGIN}/.netlify/functions/posted` : "/.netlify/functions/posted";
+    // AI(Claude)でレポート生成するAPI。失敗時は従来のテンプレ生成にフォールバック
+    const REPORT_API = LOCAL_VIEW ? `${PUBLIC_ORIGIN}/.netlify/functions/report` : "/.netlify/functions/report";
     const REFRESH_SECONDS = 300;   // 自動更新は5分間隔（関数呼び出し＝Netlify使用量を抑える）。手動更新はいつでも可
     const state = {
       entries: { IR: [], SEC: [], NEWS: [], QNEWS: [], CIRS: [], X: [] },
@@ -737,10 +739,51 @@
       renderTopFeed();
     }
 
-    function generateDraft() {
+    async function generateDraft() {
       if (!state.selected) return;
-      els.draft.value = buildDraft(state.selected, state.selected.type);
-      updateCount();
+      const item = state.selected;
+      const btn = document.getElementById("generateButton");
+      const prevLabel = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "AI生成中…";
+      try {
+        const res = await fetch(REPORT_API, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(reportPayload(item))
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.ok && data.draft) {
+            els.draft.value = data.draft;
+            updateCount();
+            return;
+          }
+        }
+        // AIが使えない/失敗 → 従来のテンプレ生成にフォールバック
+        els.draft.value = buildDraft(item, item.type);
+        updateCount();
+      } catch (error) {
+        els.draft.value = buildDraft(item, item.type);
+        updateCount();
+      } finally {
+        btn.disabled = false;
+        btn.textContent = prevLabel;
+      }
+    }
+
+    function reportPayload(item) {
+      return {
+        type: item.type,
+        kind: item.kind || "",
+        source: item.source || "",
+        title: item.title || "",
+        description: item.description || "",
+        form: item.form || "",
+        url: item.url || "",
+        publishedAt: item.publishedAt || item.acceptedAt || item.filingDate || "",
+        confidence: item.confidence || ""
+      };
     }
 
     function buildDraft(item, priority) {
@@ -1559,7 +1602,7 @@
     });
 
     document.getElementById("openXButton").addEventListener("click", async () => {
-      if (!els.draft.value.trim()) generateDraft();
+      if (!els.draft.value.trim()) await generateDraft();
       const button = document.getElementById("openXButton");
       try {
         await navigator.clipboard.writeText(els.draft.value);
