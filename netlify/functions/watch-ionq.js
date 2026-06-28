@@ -33,6 +33,25 @@ exports.handler = async (event = {}) => {
     const state = await readState();
     const postedIds = new Set([...(state.postedIds || []), ...(await readPostedIds())]);
     const notifiedIds = new Set(state.notifiedIds || []);
+    const knownIds = new Set([...(state.knownIds || []), ...(state.notifiedIds || [])]);
+    const currentIds = items.map((item) => item.id).filter(Boolean);
+
+    if (event.queryStringParameters && event.queryStringParameters.seed === "1") {
+      currentIds.forEach((id) => knownIds.add(id));
+      await writeState({
+        ...state,
+        knownIds: [...knownIds].slice(-1000),
+        initializedAt: state.initializedAt || startedAt,
+        lastCheckedAt: startedAt,
+        lastResult: "seeded"
+      });
+      return json(200, {
+        ok: true,
+        result: "seeded",
+        count: currentIds.length,
+        message: "現在表示されている候補を既読扱いにしました。次回以降の新着だけ通知します。"
+      });
+    }
 
     if (event.queryStringParameters && event.queryStringParameters.debug === "1") {
       return json(200, {
@@ -50,9 +69,10 @@ exports.handler = async (event = {}) => {
           notify: !postedIds.has(item.id) &&
             !postedIds.has(item.postedId) &&
             !notifiedIds.has(item.id) &&
+            !knownIds.has(item.id) &&
             !isLowSignalSec(item) &&
             shouldNotifyByTime(item, startedAt),
-          reason: notificationReason(item, startedAt, postedIds, notifiedIds),
+          reason: notificationReason(item, startedAt, postedIds, notifiedIds, knownIds),
           id: item.id,
           postedId: item.postedId,
           url: item.url
@@ -72,10 +92,29 @@ exports.handler = async (event = {}) => {
       });
     }
 
+    if (!state.initializedAt && !state.knownIds && process.env.NOTIFY_ALL_CURRENT !== "true") {
+      currentIds.forEach((id) => knownIds.add(id));
+      await writeState({
+        ...state,
+        knownIds: [...knownIds].slice(-1000),
+        initializedAt: startedAt,
+        lastCheckedAt: startedAt,
+        lastResult: "seeded_initial"
+      });
+      return json(200, {
+        ok: true,
+        result: "seeded_initial",
+        checkedAt: startedAt,
+        totalItems: items.length,
+        message: "初回実行のため、既存記事は通知せず既読登録しました。"
+      });
+    }
+
     const fresh = items.filter((item) =>
       !postedIds.has(item.id) &&
       !postedIds.has(item.postedId) &&
       !notifiedIds.has(item.id) &&
+      !knownIds.has(item.id) &&
       !isLowSignalSec(item) &&
       shouldNotifyByTime(item, startedAt)
     );
@@ -83,6 +122,7 @@ exports.handler = async (event = {}) => {
     if (!fresh.length) {
       await writeState({
         ...state,
+        knownIds: mergeRecentIds(knownIds, currentIds),
         lastCheckedAt: startedAt,
         lastResult: "no_new_items"
       });
@@ -103,6 +143,8 @@ exports.handler = async (event = {}) => {
     await writeState({
       ...state,
       notifiedIds: [...notifiedIds].slice(-500),
+      knownIds: mergeRecentIds(knownIds, currentIds),
+      initializedAt: state.initializedAt || startedAt,
       lastCheckedAt: startedAt,
       lastNotifiedAt: startedAt,
       lastItem: item,
@@ -439,9 +481,10 @@ function shouldNotifyByTime(item, nowValue) {
   return itemTime >= oldestAllowed && itemTime <= now + 2 * 60 * 1000;
 }
 
-function notificationReason(item, nowValue, postedIds, notifiedIds) {
+function notificationReason(item, nowValue, postedIds, notifiedIds, knownIds = new Set()) {
   if (postedIds.has(item.id) || postedIds.has(item.postedId)) return "posted";
   if (notifiedIds.has(item.id)) return "already_notified";
+  if (knownIds.has(item.id)) return "already_known";
   if (isLowSignalSec(item)) return "low_signal_sec";
   const itemTime = parseItemTime(item);
   if (!itemTime) return "no_valid_time";
@@ -461,6 +504,14 @@ function effectiveLookbackMinutes() {
   const configured = Number(process.env.WATCH_LOOKBACK_MINUTES || DEFAULT_LOOKBACK_MINUTES);
   if (!Number.isFinite(configured) || configured <= 0) return DEFAULT_LOOKBACK_MINUTES;
   return Math.max(configured, DEFAULT_LOOKBACK_MINUTES);
+}
+
+function mergeRecentIds(existingIds, newIds) {
+  const merged = new Set(existingIds);
+  newIds.forEach((id) => {
+    if (id) merged.add(id);
+  });
+  return [...merged].slice(-1000);
 }
 
 function parseItemTime(item) {
