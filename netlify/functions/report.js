@@ -63,6 +63,19 @@ exports.handler = async (event = {}) => {
   if (event.httpMethod === "OPTIONS") return cors(204, "");
 
   try {
+    if (event.httpMethod === "GET") {
+      const query = event.queryStringParameters || parseQuery(event.rawQuery || "");
+      if (query.testFetch === "1") {
+        const article = await fetchArticle(query.url || "");
+        return cors(200, {
+          ok: article.ok,
+          result: "article_fetch_test",
+          article: articleSummary(article, query.url || "", true)
+        });
+      }
+      return cors(200, { ok: false, error: "use_post_or_testFetch" });
+    }
+
     const apiKey = (process.env.OPENAI_API_KEY || "").trim();
     if (!apiKey) return cors(200, { ok: false, error: "no_api_key" });
 
@@ -70,6 +83,20 @@ exports.handler = async (event = {}) => {
     if (!item.title) return cors(200, { ok: false, error: "no_title" });
 
     const article = await fetchArticle(item.url);
+    if (!article.ok) {
+      return cors(200, {
+        ok: false,
+        error: "article_fetch_failed",
+        article: {
+          ok: false,
+          error: article.error || "unknown",
+          method: article.method || "",
+          chars: article.text ? article.text.length : 0,
+          finalUrl: article.finalUrl || item.url || ""
+        }
+      });
+    }
+
     const response = await fetch(OPENAI_URL, {
       method: "POST",
       headers: {
@@ -99,12 +126,7 @@ exports.handler = async (event = {}) => {
     return cors(200, {
       ok: true,
       draft,
-      article: {
-        ok: article.ok,
-        error: article.error || "",
-        chars: article.text ? article.text.length : 0,
-        finalUrl: article.finalUrl || item.url || ""
-      }
+      article: articleSummary(article, item.url || "", false)
     });
   } catch (error) {
     return cors(200, { ok: false, error: error.message });
@@ -116,9 +138,25 @@ async function fetchArticle(url) {
     return { ok: false, error: "no_url", text: "" };
   }
 
+  const attempts = [
+    { method: "direct", url },
+    ...readerUrls(url).map((readerUrl) => ({ method: "reader", url: readerUrl }))
+  ];
+
+  let lastError = "unknown";
+  for (const attempt of attempts) {
+    const result = await fetchArticleAttempt(attempt.url, attempt.method);
+    if (result.ok) return result;
+    lastError = `${attempt.method}:${result.error || "failed"}`;
+  }
+
+  return { ok: false, error: lastError, text: "" };
+}
+
+async function fetchArticleAttempt(url, method) {
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 9000);
+    const timeout = setTimeout(() => controller.abort(), method === "reader" ? 16000 : 9000);
     const response = await fetch(url, {
       redirect: "follow",
       signal: controller.signal,
@@ -131,27 +169,43 @@ async function fetchArticle(url) {
     clearTimeout(timeout);
 
     if (!response.ok) {
-      return { ok: false, error: `fetch_${response.status}`, finalUrl: response.url, text: "" };
+      return { ok: false, error: `fetch_${response.status}`, method, finalUrl: response.url, text: "" };
     }
 
     const contentType = response.headers.get("content-type") || "";
     const raw = await response.text();
-    const text = contentType.includes("html") || /<html|<article|<body/i.test(raw)
-      ? extractReadableText(raw)
-      : cleanText(raw);
+    const text = method === "reader"
+      ? cleanReaderText(raw)
+      : contentType.includes("html") || /<html|<article|<body/i.test(raw)
+        ? extractReadableText(raw)
+        : cleanText(raw);
 
     if (!text || text.length < 300) {
-      return { ok: false, error: "article_text_too_short", finalUrl: response.url, text: text.slice(0, MAX_ARTICLE_CHARS) };
+      return { ok: false, error: "article_text_too_short", method, finalUrl: response.url, text: text.slice(0, MAX_ARTICLE_CHARS) };
     }
 
     return {
       ok: true,
+      method,
       finalUrl: response.url,
       text: text.slice(0, MAX_ARTICLE_CHARS)
     };
   } catch (error) {
-    return { ok: false, error: error.name === "AbortError" ? "fetch_timeout" : error.message, text: "" };
+    return { ok: false, error: error.name === "AbortError" ? "fetch_timeout" : error.message, method, text: "" };
   }
+}
+
+function readerUrls(url) {
+  const normalized = String(url || "").trim();
+  const noScheme = normalized.replace(/^https?:\/\//i, "");
+  return [
+    `https://r.jina.ai/http://r.jina.ai/http://${normalized}`,
+    `https://r.jina.ai/http://r.jina.ai/http://https://${noScheme}`,
+    `https://r.jina.ai/http://r.jina.ai/http://http://${noScheme}`,
+    `https://r.jina.ai/http://${normalized}`,
+    `https://r.jina.ai/http://http://${noScheme}`,
+    `https://r.jina.ai/http://https://${noScheme}`
+  ];
 }
 
 function extractReadableText(html) {
@@ -201,6 +255,14 @@ function cleanText(value) {
     .trim();
 }
 
+function cleanReaderText(value) {
+  return cleanText(value)
+    .replace(/^Title:\s*/gim, "")
+    .replace(/^URL Source:\s*.*$/gim, "")
+    .replace(/^Markdown Content:\s*/gim, "")
+    .trim();
+}
+
 function buildUserText(item, article) {
   const lines = [
     "次のニュース候補について、取得できた記事本文を優先して投稿レポートを書いてください。",
@@ -217,7 +279,7 @@ function buildUserText(item, article) {
     article.finalUrl && article.finalUrl !== item.url ? `取得後URL: ${article.finalUrl}` : "",
     "",
     article.ok ? "記事本文（取得済み）:" : `記事本文（取得失敗: ${article.error || "unknown"}）:`,
-    article.text || "本文は取得できませんでした。タイトル・出典・種別から分かる範囲だけで書き、本文確認が必要だと明記してください。"
+    article.text
   ];
   return lines.filter(Boolean).join("\n");
 }
@@ -255,6 +317,28 @@ function parseBody(raw) {
   }
 }
 
+function parseQuery(raw) {
+  return String(raw || "")
+    .split("&")
+    .filter(Boolean)
+    .reduce((params, part) => {
+      const [key, ...rest] = part.split("=");
+      params[decodeURIComponent(key || "")] = decodeURIComponent(rest.join("=") || "");
+      return params;
+    }, {});
+}
+
+function articleSummary(article, fallbackUrl, includeSample) {
+  return {
+    ok: !!article.ok,
+    error: article.error || "",
+    method: article.method || "",
+    chars: article.text ? article.text.length : 0,
+    finalUrl: article.finalUrl || fallbackUrl || "",
+    sample: includeSample ? String(article.text || "").slice(0, 900) : undefined
+  };
+}
+
 function cors(statusCode, body) {
   return {
     statusCode,
@@ -262,7 +346,7 @@ function cors(statusCode, body) {
       "content-type": "application/json; charset=utf-8",
       "cache-control": "no-store",
       "access-control-allow-origin": "*",
-      "access-control-allow-methods": "POST,OPTIONS",
+      "access-control-allow-methods": "GET,POST,OPTIONS",
       "access-control-allow-headers": "content-type"
     },
     body: typeof body === "string" ? body : JSON.stringify(body)

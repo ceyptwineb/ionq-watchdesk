@@ -760,15 +760,12 @@
             updateCount();
             return;
           }
+          showReportStatus(data.article, `AI生成停止: ${data.error || "記事本文を取得できませんでした"}`);
+          return;
         }
-        // AIが使えない/失敗 → 従来のテンプレ生成にフォールバック
-        els.draft.value = buildDraft(item, item.type);
-        showReportStatus(null, "AI生成に失敗したためテンプレ生成に切り替えました");
-        updateCount();
+        showReportStatus(null, "AI生成停止: report APIに接続できませんでした");
       } catch (error) {
-        els.draft.value = buildDraft(item, item.type);
-        showReportStatus(null, "AI生成に失敗したためテンプレ生成に切り替えました");
-        updateCount();
+        showReportStatus(null, `AI生成停止: ${error.message}`);
       } finally {
         btn.disabled = false;
         btn.textContent = prevLabel;
@@ -778,12 +775,12 @@
     function showReportStatus(article, fallbackMessage = "") {
       if (!els.error) return;
       if (article && article.ok) {
-        els.error.textContent = `記事本文取得OK: 約${article.chars || 0}文字を読んで生成`;
+        els.error.textContent = `記事本文取得OK: ${article.method || "direct"}で約${article.chars || 0}文字を読んで生成`;
         els.error.style.display = "block";
         return;
       }
       if (article && !article.ok) {
-        els.error.textContent = `記事本文取得失敗: ${article.error || "unknown"}。タイトル/出典ベースで生成`;
+        els.error.textContent = `記事本文取得失敗: ${article.error || "unknown"}。本文が取れないためAI生成を止めました`;
         els.error.style.display = "block";
         return;
       }
