@@ -392,6 +392,7 @@
   </main>
 
   <script>
+    const APP_VERSION = "clean-20260629-0118";
     const PUBLIC_ORIGIN = "https://ionqrnews.netlify.app";
     const IS_LOCAL_PREVIEW = location.protocol === "file:" ||
       location.hostname === "127.0.0.1" ||
@@ -436,6 +437,7 @@
     init();
 
     function init() {
+      els.updated.textContent = APP_VERSION;
       renderTabs();
       bindEvents();
       loadPostedFromServer();
@@ -473,16 +475,22 @@
 
     async function refresh() {
       els.updated.textContent = "更新中";
+      const endpoint = `${API}/.netlify/functions/latest-ionq`;
       try {
-        const response = await fetch(`${API}/.netlify/functions/latest-ionq`, { cache: "no-store" });
-        const data = await response.json();
+        const data = await fetchJson(endpoint, 10000);
         state.items = normalizeLatest(data);
         els.updated.textContent = formatTime(data.updatedAt || new Date().toISOString());
         renderItems();
         if (!state.selectedId && state.items[0]) selectItem(state.items[0].id);
       } catch (error) {
         els.updated.textContent = "取得失敗";
-        els.items.innerHTML = `<div class="empty">速報取得に失敗しました。${escapeHtml(error.message)}</div>`;
+        els.items.innerHTML = `
+          <div class="empty">
+            <div>速報取得に失敗しました。</div>
+            <div class="warn">${escapeHtml(error.message)}</div>
+            <div class="status">${escapeHtml(endpoint)}</div>
+          </div>
+        `;
       }
     }
 
@@ -594,7 +602,7 @@
       setReadStatus("記事本文を取りに行っています。", "");
       try {
         const url = `${API}/.netlify/functions/report?testFetch=1&url=${encodeURIComponent(item.url)}`;
-        const data = await fetch(url, { cache: "no-store" }).then((r) => r.json());
+        const data = await fetchJson(url, 20000);
         state.latestArticle = data.article || null;
         showArticleResult(data);
       } catch (error) {
@@ -612,11 +620,11 @@
       els.aiStatus.textContent = "生成中";
       setReadStatus("記事本文を読んでからレポートを作っています。", "");
       try {
-        const response = await fetch(`${API}/.netlify/functions/report`, {
+        const response = await fetchWithTimeout(`${API}/.netlify/functions/report`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(item)
-        });
+        }, 45000);
         const data = await response.json();
         state.latestArticle = data.article || null;
         if (!data.ok) {
@@ -710,7 +718,7 @@
 
     async function loadPostedFromServer() {
       try {
-        const data = await fetch(`${API}/.netlify/functions/posted`, { cache: "no-store" }).then((r) => r.json());
+        const data = await fetchJson(`${API}/.netlify/functions/posted`, 8000);
         if (data.ok && Array.isArray(data.ids)) {
           data.ids.forEach((id) => state.posted.add(id));
           saveLocalPosted();
@@ -718,6 +726,34 @@
         }
       } catch (error) {
         // Local storage is enough when server state is unavailable.
+      }
+    }
+
+    async function fetchJson(url, timeoutMs) {
+      const response = await fetchWithTimeout(url, { cache: "no-store" }, timeoutMs);
+      const text = await response.text();
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${text.slice(0, 120)}`);
+      }
+      try {
+        return JSON.parse(text);
+      } catch (error) {
+        throw new Error(`JSONではない応答: ${text.slice(0, 120)}`);
+      }
+    }
+
+    async function fetchWithTimeout(url, options, timeoutMs) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        return await fetch(url, { ...(options || {}), signal: controller.signal });
+      } catch (error) {
+        if (error.name === "AbortError") {
+          throw new Error(`タイムアウト: ${url}`);
+        }
+        throw error;
+      } finally {
+        clearTimeout(timeout);
       }
     }
 
