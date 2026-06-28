@@ -1,5 +1,12 @@
 const SEC_CIK = "0001824920";
 const COMPETITOR_TICKERS = ["RGTI", "QBTS", "QUBT", "IBM", "GOOGL", "MSFT", "AMZN", "HON", "NVDA"];
+const QUANTUM_RSS_FEEDS = [
+  { source: "The Quantum Insider", url: "https://thequantuminsider.com/feed/" },
+  { source: "Quantum Computing Report", url: "https://quantumcomputingreport.com/feed/" },
+  { source: "Inside Quantum Technology", url: "https://www.insidequantumtechnology.com/feed/" },
+  { source: "Quantum Zeitgeist", url: "https://quantumzeitgeist.com/feed/" },
+  { source: "HPCwire", url: "https://www.hpcwire.com/feed/" }
+];
 
 exports.handler = async () => {
   try {
@@ -7,7 +14,7 @@ exports.handler = async () => {
       getSecFilings(),
       getGoogleNews("site:investors.ionq.com/news/news-details IonQ"),
       getGoogleNews("IONQ OR $IONQ"),
-      getGoogleNews("\"quantum computing\" OR \"quantum computer\" OR \"quantum technology\" -IONQ -$IONQ"),
+      getQuantumNews(),
       getCompetitorSecFilings(),
       getGoogleNews("(Rigetti OR RGTI OR D-Wave OR QBTS OR \"Quantum Computing Inc\" OR QUBT OR Quantinuum OR \"IBM quantum\" OR \"Google quantum\" OR \"Microsoft quantum\" OR \"AWS Braket\" OR \"NVIDIA quantum\")")
     ]);
@@ -185,7 +192,78 @@ async function getGoogleNews(query) {
   return parseItems(xml).slice(0, 8);
 }
 
-function parseItems(xml) {
+async function getQuantumNews() {
+  const googleQueries = [
+    "\"quantum computing\" OR \"quantum computer\" OR \"quantum technology\" -IONQ -$IONQ",
+    "\"quantum computing\" (startup OR funding OR partnership OR contract OR government OR defense)",
+    "\"quantum computing\" (PRNewswire OR GlobeNewswire OR BusinessWire OR \"press release\")",
+    "\"quantum error correction\" OR \"logical qubit\" OR \"ion trap\" OR \"superconducting qubit\""
+  ];
+
+  const batches = await Promise.all([
+    ...googleQueries.map((query) => safeGetGoogleNews(query)),
+    ...QUANTUM_RSS_FEEDS.map((feed) => safeGetFeed(feed))
+  ]);
+
+  return dedupeItems(batches.flat())
+    .filter(isQuantumRelevant)
+    .sort((a, b) => Date.parse(b.publishedAt || 0) - Date.parse(a.publishedAt || 0))
+    .slice(0, 30);
+}
+
+async function safeGetGoogleNews(query) {
+  try {
+    return await getGoogleNews(query);
+  } catch (error) {
+    console.warn(`Google quantum query failed: ${error.message}`);
+    return [];
+  }
+}
+
+async function safeGetFeed(feed) {
+  try {
+    const response = await fetch(feed.url, {
+      headers: {
+        "User-Agent": "IONQ Watchdesk contact@example.com",
+        "Accept": "application/rss+xml,application/atom+xml,text/xml"
+      }
+    });
+    if (!response.ok) throw new Error(`feed_${response.status}`);
+    const xml = await response.text();
+    return parseItems(xml, feed.source).slice(0, 12);
+  } catch (error) {
+    console.warn(`Quantum feed failed ${feed.source}: ${error.message}`);
+    return [];
+  }
+}
+
+function dedupeItems(items) {
+  const seen = new Set();
+  const output = [];
+  for (const item of items) {
+    const key = normalizeKey(item.url || item.title);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    output.push(item);
+  }
+  return output;
+}
+
+function normalizeKey(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/^https?:\/\/(www\.)?/, "")
+    .replace(/[?#].*$/, "")
+    .replace(/\/$/, "")
+    .trim();
+}
+
+function isQuantumRelevant(item) {
+  const text = `${item.title || ""} ${item.source || ""}`.toLowerCase();
+  return /quantum|qubit|qubits|ion trap|trapped ion|superconducting|photonic|annealing|qpu|qiskit|braket|cuda-q|quantinuum|rigetti|d-wave|pasqal|quera|atom computing|alice & bob|xanadu/.test(text);
+}
+
+function parseItems(xml, fallbackSource = "") {
   const items = [];
   const itemMatches = xml.match(/<item>[\s\S]*?<\/item>/g) || [];
 
@@ -194,7 +272,18 @@ function parseItems(xml) {
       title: cleanXml(readTag(itemXml, "title")),
       url: cleanXml(readTag(itemXml, "link")),
       publishedAt: cleanXml(readTag(itemXml, "pubDate")),
-      source: cleanXml(readTag(itemXml, "source"))
+      source: cleanXml(readTag(itemXml, "source")) || fallbackSource
+    });
+  }
+
+  const entryMatches = xml.match(/<entry[\s\S]*?<\/entry>/g) || [];
+  for (const entryXml of entryMatches) {
+    const href = (entryXml.match(/<link[^>]+href=["']([^"']+)["'][^>]*>/i) || [])[1] || "";
+    items.push({
+      title: cleanXml(readTag(entryXml, "title")),
+      url: cleanXml(href || readTag(entryXml, "link")),
+      publishedAt: cleanXml(readTag(entryXml, "updated") || readTag(entryXml, "published")),
+      source: fallbackSource
     });
   }
 

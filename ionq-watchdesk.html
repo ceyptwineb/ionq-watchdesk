@@ -291,6 +291,7 @@
         <div id="version">version: clean-collector-20260629</div>
         <div id="updated">updated: --</div>
         <div id="endpoint">source: --</div>
+        <div id="summary">summary: --</div>
       </div>
       <div id="tabs" class="tabs"></div>
     </aside>
@@ -362,6 +363,7 @@
     const el = {
       updated: document.getElementById("updated"),
       endpoint: document.getElementById("endpoint"),
+      summary: document.getElementById("summary"),
       tabs: document.getElementById("tabs"),
       feed: document.getElementById("feed"),
       search: document.getElementById("search"),
@@ -403,13 +405,16 @@
       el.updated.textContent = "updated: loading";
       try {
         const data = await fetchJson(latestEndpoint, 12000);
-        state.items = normalizeLatest(data);
+        const normalized = normalizeLatest(data);
+        state.items = normalized.items;
         el.updated.textContent = "updated: " + formatTime(data.updatedAt || new Date().toISOString());
+        renderSummary(normalized.stats);
         renderTabs();
         renderFeed();
         if (!state.selectedId && state.items.length) selectItem(state.items[0].id);
       } catch (error) {
         el.updated.textContent = "updated: failed";
+        el.summary.textContent = "summary: fetch failed";
         el.feed.innerHTML = errorBox("速報取得に失敗しました", error.message, latestEndpoint);
       }
     }
@@ -422,12 +427,15 @@
       addRows(rows, data.quantumNews, "quantum", "量子業界", "QNEWS");
       addRows(rows, data.competitorSec, "competitor", "競合SEC", "CSEC");
       addRows(rows, data.competitorNews, "competitor", "競合NEWS", "CNEWS");
-      return rows
-        .filter(function (item) { return item.title || item.url; })
-        .filter(function (item) { return isFreshItem(item); })
+      const valid = rows.filter(function (item) { return item.title || item.url; });
+      const fresh = valid.filter(function (item) { return isFreshItem(item); });
+      return {
+        items: fresh
         .sort(function (a, b) {
           return Date.parse(b.publishedAt || b.acceptedAt || 0) - Date.parse(a.publishedAt || a.acceptedAt || 0);
-        });
+        }),
+        stats: buildStats(valid, fresh)
+      };
     }
 
     function addRows(rows, list, category, label, type) {
@@ -475,10 +483,50 @@
       return counts;
     }
 
+    function buildStats(valid, fresh) {
+      const stats = {
+        total: valid.length,
+        fresh: fresh.length,
+        old: Math.max(0, valid.length - fresh.length),
+        byCategory: {}
+      };
+      valid.forEach(function (item) {
+        if (!stats.byCategory[item.category]) {
+          stats.byCategory[item.category] = { total: 0, fresh: 0 };
+        }
+        stats.byCategory[item.category].total += 1;
+      });
+      fresh.forEach(function (item) {
+        if (!stats.byCategory[item.category]) {
+          stats.byCategory[item.category] = { total: 0, fresh: 0 };
+        }
+        stats.byCategory[item.category].fresh += 1;
+      });
+      return stats;
+    }
+
+    function renderSummary(stats) {
+      if (!stats) {
+        el.summary.textContent = "summary: --";
+        return;
+      }
+      const parts = [
+        "取得 " + stats.total + "件",
+        "48h " + stats.fresh + "件",
+        "除外 " + stats.old + "件"
+      ];
+      el.summary.textContent = "summary: " + parts.join(" / ");
+    }
+
     function renderFeed() {
       const items = filteredItems();
       if (!items.length) {
-        el.feed.innerHTML = "<div class=\"empty\">表示するニュースがありません。</div>";
+        el.feed.innerHTML = [
+          "<div class=\"empty\">",
+          "<div>48時間以内の表示対象ニュースはありません。</div>",
+          "<div class=\"muted\">左の summary が「取得あり / 48h 0件」なら、取得は成功して古い記事だけが除外されています。</div>",
+          "</div>"
+        ].join("");
         return;
       }
 
