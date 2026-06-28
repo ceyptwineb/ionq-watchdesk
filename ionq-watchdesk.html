@@ -417,7 +417,8 @@
           <div class="selected-story" id="selectedStory">最新情報を取得しています</div>
         </div>
         <div class="control-actions">
-          <button class="btn primary" id="generateButton" type="button">投稿案を作成</button>
+          <button class="btn primary" id="chatgptButton" type="button">ChatGPTで作成（無料）</button>
+          <button class="btn" id="generateButton" type="button">投稿案を作成</button>
           <button class="btn" id="openSourceButton" type="button">出典を開く</button>
         </div>
       </div>
@@ -1600,6 +1601,40 @@
     document.getElementById("refreshButton").addEventListener("click", refresh);
     document.getElementById("generateButton").addEventListener("click", generateDraft);
     els.draft.addEventListener("input", updateCount);
+
+    // 無料：ChatGPT(課金なしのチャット)をプロンプト＋記事URL入りで開く
+    document.getElementById("chatgptButton").addEventListener("click", () => {
+      if (!state.selected) return;
+      const prompt = chatgptPrompt(state.selected);
+      window.open("https://chatgpt.com/?q=" + encodeURIComponent(prompt), "_blank", "noopener");
+    });
+
+    function chatgptPrompt(item) {
+      const url = /^https?:\/\//i.test(String(item.url || "")) ? item.url : "";
+      return [
+        "次のIONQ($IONQ)関連ニュースを読んで、X用の日本語レポートを書いて。",
+        "見出し：" + (item.title || ""),
+        "出典名：" + (item.source || "不明"),
+        "対象記事URL：" + (url || "(URLが無い場合は下に本文を貼ります)"),
+        "まずURLを開いて本文を読む。Google Newsの中継等で開けない時は『見出し＋出典名』で検索して実記事を見つけて読む。本文の数字・相手先・日付を必ず拾い、本文に無い数字は作らない。報道は二次情報、SEC/公式IRは一次情報として扱う。",
+        "",
+        "出力フォーマット(*や#などの装飾記号なし・プレーンテキスト)：",
+        "【分類ラベル】",
+        "(要点の見出し1行)",
+        "ひとことで：(1行要約。金額/%/社名/機関名があれば必ず入れる)",
+        "",
+        "要点：(2〜3文)",
+        "押さえる数字：(金額は$と日本円換算を併記／値動き／量子ビット数／関係機関。無ければ省略)",
+        "ニュース内容：(各社の方式=イオントラップ/超伝導/アニーリング等に踏み込む)",
+        "読み解き：(投資家が見るべき点。IonQ固有の観点で)",
+        "(競合・他社比較の記事のときだけ)IonQの勝ち負け：▼IonQ vs 〇〇($XXX) ・IonQが勝っている点：… ・IonQが負けている点：…",
+        "評価：・凄さ：★★★☆☆ ・株価影響：★★★☆☆ ・関連銘柄：$IONQ/…(RGTI/QBTS等のティッカー記号も拾う)",
+        "結論：(投資家への一言)",
+        "出典：出典名 / " + (url || "(URL)"),
+        "",
+        "IonQ知識：イオントラップ方式。強み=高いゲート忠実度・全結合(all-to-all)・AWS/Azure/Google Cloudの3大クラウド提供。弱み=ゲート速度が超伝導より遅い・量子ビット数の拡張ペース・赤字先行で高バリュエーション。性能はAQ(実効的に使える量子ビット数)で見る。決算は受注残(backlog)/手元現金/赤字縮小が焦点。契約はPoC(実証)か複数年本契約かで価値が段違い。競合：RGTI(Rigetti,超伝導)/QBTS(D-Wave,アニーリング・実売上あり)/QUBT(光・小型)/IBM(超伝導最大手)/GOOGL(超伝導・誤り訂正Willow)/MSFT(Azure＋トポロジカル)/AMZN(Braket＋自社ハード)/HON(Quantinuum,同じイオントラップの直接競合)/NVDA(GPU/CUDA-Q,補完)。"
+      ].join("\n");
+    }
 
     document.getElementById("openSourceButton").addEventListener("click", () => {
       if (state.selected?.url) window.open(state.selected.url, "_blank", "noreferrer");
