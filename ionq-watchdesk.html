@@ -471,7 +471,7 @@
     const API_URL = LOCAL_VIEW ? PUBLIC_API : "/.netlify/functions/latest-ionq";
     // 「投稿済み」状態を端末間で共有する保存API
     const POSTED_API = LOCAL_VIEW ? `${PUBLIC_ORIGIN}/.netlify/functions/posted` : "/.netlify/functions/posted";
-    // AI(Claude)でレポート生成するAPI。失敗時は従来のテンプレ生成にフォールバック
+    // AIでレポート生成するAPI。失敗時は従来のテンプレ生成にフォールバック
     const REPORT_API = LOCAL_VIEW ? `${PUBLIC_ORIGIN}/.netlify/functions/report` : "/.netlify/functions/report";
     const REFRESH_SECONDS = 300;   // 自動更新は5分間隔（関数呼び出し＝Netlify使用量を抑える）。手動更新はいつでも可
     const state = {
@@ -756,19 +756,40 @@
           const data = await res.json();
           if (data.ok && data.draft) {
             els.draft.value = data.draft;
+            showReportStatus(data.article);
             updateCount();
             return;
           }
         }
         // AIが使えない/失敗 → 従来のテンプレ生成にフォールバック
         els.draft.value = buildDraft(item, item.type);
+        showReportStatus(null, "AI生成に失敗したためテンプレ生成に切り替えました");
         updateCount();
       } catch (error) {
         els.draft.value = buildDraft(item, item.type);
+        showReportStatus(null, "AI生成に失敗したためテンプレ生成に切り替えました");
         updateCount();
       } finally {
         btn.disabled = false;
         btn.textContent = prevLabel;
+      }
+    }
+
+    function showReportStatus(article, fallbackMessage = "") {
+      if (!els.error) return;
+      if (article && article.ok) {
+        els.error.textContent = `記事本文取得OK: 約${article.chars || 0}文字を読んで生成`;
+        els.error.style.display = "block";
+        return;
+      }
+      if (article && !article.ok) {
+        els.error.textContent = `記事本文取得失敗: ${article.error || "unknown"}。タイトル/出典ベースで生成`;
+        els.error.style.display = "block";
+        return;
+      }
+      if (fallbackMessage) {
+        els.error.textContent = fallbackMessage;
+        els.error.style.display = "block";
       }
     }
 

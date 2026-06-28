@@ -96,7 +96,16 @@ exports.handler = async (event = {}) => {
     const draft = String(data?.choices?.[0]?.message?.content || "").trim();
     if (!draft) return cors(200, { ok: false, error: "empty" });
 
-    return cors(200, { ok: true, draft });
+    return cors(200, {
+      ok: true,
+      draft,
+      article: {
+        ok: article.ok,
+        error: article.error || "",
+        chars: article.text ? article.text.length : 0,
+        finalUrl: article.finalUrl || item.url || ""
+      }
+    });
   } catch (error) {
     return cors(200, { ok: false, error: error.message });
   }
