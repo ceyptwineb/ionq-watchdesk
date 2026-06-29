@@ -150,6 +150,27 @@
       gap: 8px;
     }
 
+    .priority-box {
+      border: 1px solid #d3a64a;
+      background: #fffaf0;
+      border-radius: 8px;
+      padding: 10px;
+      display: grid;
+      gap: 8px;
+    }
+    .priority-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      color: #6f4a00;
+      font-weight: 700;
+    }
+    .priority-list {
+      display: grid;
+      gap: 7px;
+    }
+
     .item {
       background: var(--panel);
       border: 1px solid var(--line);
@@ -161,6 +182,10 @@
     .item.active {
       border-color: var(--accent);
       box-shadow: var(--shadow);
+    }
+    .item.priority {
+      border-color: #dfb757;
+      background: #fffdf7;
     }
     .item-title {
       font-weight: 700;
@@ -522,46 +547,68 @@
 
     function renderFeed() {
       const items = filteredItems();
+      const priorityItems = state.items
+        .filter(function (item) { return isMarketMovingCandidate(item) && !state.posted.has(item.id); })
+        .slice(0, 5);
+
+      el.feed.innerHTML = "";
+      appendPriorityBox(priorityItems);
+
       if (!items.length) {
-        el.feed.innerHTML = [
-          "<div class=\"empty\">",
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.innerHTML = [
           "<div>48時間以内の表示対象ニュースはありません。</div>",
-          "<div class=\"muted\">左の summary が「取得あり / 48h 0件」なら、取得は成功して古い記事だけが除外されています。</div>",
-          "</div>"
+          "<div class=\"muted\">左の summary が「取得あり / 48h 0件」なら、取得は成功して古い記事だけが除外されています。</div>"
         ].join("");
+        el.feed.appendChild(empty);
         return;
       }
 
-      el.feed.innerHTML = "";
-      items.forEach(function (item) {
-        const card = document.createElement("article");
-        card.className = "item" + (item.id === state.selectedId ? " active" : "");
-        card.innerHTML = [
-          "<div class=\"item-title\">" + escapeHtml(item.title) + "</div>",
-          "<div class=\"meta\">",
-          "<span class=\"badge\">" + escapeHtml(item.label) + "</span>",
-          isMarketMovingCandidate(item) ? "<span class=\"badge\">株価材料</span>" : "",
-          item.form ? "<span class=\"badge\">" + escapeHtml(item.form) + "</span>" : "",
-          "<span>" + escapeHtml(item.source || "") + "</span>",
-          "<span>" + escapeHtml(formatTime(item.publishedAt)) + "</span>",
-          "</div>",
-          "<div class=\"item-actions\">",
-          "<label class=\"posted\"><input type=\"checkbox\" " + (state.posted.has(item.id) ? "checked" : "") + ">投稿済み</label>",
-          "<div class=\"row\"><button type=\"button\" data-act=\"copy\">URL取得</button><button type=\"button\" data-act=\"select\">選択</button></div>",
-          "</div>"
-        ].join("");
+      items.forEach(function (item) { appendItemCard(el.feed, item, false); });
+    }
 
-        card.querySelector("[data-act='select']").addEventListener("click", function () { selectItem(item.id); });
-        card.querySelector("[data-act='copy']").addEventListener("click", function () {
-          selectItem(item.id);
-          copyGptsText();
-        });
-        card.querySelector("input").addEventListener("change", function (event) {
-          setPosted(item.id, event.target.checked);
-        });
-        card.addEventListener("dblclick", function () { selectItem(item.id); });
-        el.feed.appendChild(card);
+    function appendPriorityBox(priorityItems) {
+      if (!priorityItems.length) return;
+      const box = document.createElement("section");
+      box.className = "priority-box";
+      box.innerHTML = [
+        "<div class=\"priority-head\"><span>投稿優先ニュース</span><span class=\"count\">" + priorityItems.length + "</span></div>",
+        "<div class=\"priority-list\"></div>"
+      ].join("");
+      const list = box.querySelector(".priority-list");
+      priorityItems.forEach(function (item) { appendItemCard(list, item, true); });
+      el.feed.appendChild(box);
+    }
+
+    function appendItemCard(parent, item, priority) {
+      const card = document.createElement("article");
+      card.className = "item" + (priority ? " priority" : "") + (item.id === state.selectedId ? " active" : "");
+      card.innerHTML = [
+        "<div class=\"item-title\">" + escapeHtml(item.title) + "</div>",
+        "<div class=\"meta\">",
+        "<span class=\"badge\">" + escapeHtml(item.label) + "</span>",
+        isMarketMovingCandidate(item) ? "<span class=\"badge\">株価材料</span>" : "",
+        item.form ? "<span class=\"badge\">" + escapeHtml(item.form) + "</span>" : "",
+        "<span>" + escapeHtml(item.source || "") + "</span>",
+        "<span>" + escapeHtml(formatTime(item.publishedAt)) + "</span>",
+        "</div>",
+        "<div class=\"item-actions\">",
+        "<label class=\"posted\"><input type=\"checkbox\" " + (state.posted.has(item.id) ? "checked" : "") + ">投稿済み</label>",
+        "<div class=\"row\"><button type=\"button\" data-act=\"copy\">URL取得</button><button type=\"button\" data-act=\"select\">選択</button></div>",
+        "</div>"
+      ].join("");
+
+      card.querySelector("[data-act='select']").addEventListener("click", function () { selectItem(item.id); });
+      card.querySelector("[data-act='copy']").addEventListener("click", function () {
+        selectItem(item.id);
+        copyGptsText();
       });
+      card.querySelector("input").addEventListener("change", function (event) {
+        setPosted(item.id, event.target.checked);
+      });
+      card.addEventListener("dblclick", function () { selectItem(item.id); });
+      parent.appendChild(card);
     }
 
     function filteredItems() {
