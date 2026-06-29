@@ -56,7 +56,7 @@
     .app {
       min-height: 100vh;
       display: grid;
-      grid-template-columns: 260px minmax(360px, 1fr) 390px;
+      grid-template-columns: 230px minmax(420px, 1fr) 380px;
     }
 
     .side {
@@ -114,6 +114,11 @@
       color: var(--muted);
       font-size: 12px;
       font-weight: 400;
+    }
+
+    .side-actions {
+      display: grid;
+      gap: 7px;
     }
 
     .main {
@@ -318,7 +323,10 @@
         <div id="endpoint">source: --</div>
         <div id="summary">summary: --</div>
       </div>
-      <div id="tabs" class="tabs"></div>
+      <div class="side-actions">
+        <button id="showAll" class="primary">最新ニュースを見る</button>
+        <button id="showPosted">投稿済みだけ見る</button>
+      </div>
     </aside>
 
     <section class="main">
@@ -359,30 +367,18 @@
 
   <script>
     const APP_VERSION = "clean-collector-20260629";
-    const PUBLIC_ORIGIN = "https://ionqrnews.netlify.app";
+    const PUBLIC_ORIGIN = "https://ionqnews.netlify.app";
     const MAX_ITEM_AGE_HOURS = 48;
     const isLocalPreview = location.protocol === "file:" || location.hostname === "127.0.0.1" || location.hostname === "localhost";
     const API = isLocalPreview ? PUBLIC_ORIGIN : "";
     const latestEndpoint = API + "/.netlify/functions/latest-ionq";
     const postedEndpoint = API + "/.netlify/functions/posted";
 
-    const labels = {
-      all: "全部",
-      market: "株価材料",
-      ir: "最新IR",
-      sec: "重要SEC",
-      news: "IONQ NEWS",
-      quantum: "量子業界",
-      competitor: "競合",
-      posted: "投稿済み"
-    };
-
-    const categories = ["all", "market", "ir", "sec", "news", "quantum", "competitor", "posted"];
     const state = {
       items: [],
       posted: new Set(loadLocalPosted()),
       selectedId: "",
-      category: "all",
+      view: "all",
       query: ""
     };
 
@@ -390,7 +386,8 @@
       updated: document.getElementById("updated"),
       endpoint: document.getElementById("endpoint"),
       summary: document.getElementById("summary"),
-      tabs: document.getElementById("tabs"),
+      showAll: document.getElementById("showAll"),
+      showPosted: document.getElementById("showPosted"),
       feed: document.getElementById("feed"),
       search: document.getElementById("search"),
       reload: document.getElementById("reload"),
@@ -409,7 +406,6 @@
       document.getElementById("version").textContent = "version: " + APP_VERSION;
       el.endpoint.textContent = "source: " + latestEndpoint;
       bindEvents();
-      renderTabs();
       loadPostedFromServer();
       refresh();
       setInterval(refresh, 60000);
@@ -425,6 +421,16 @@
       el.copyUrl.addEventListener("click", copySelectedUrl);
       el.openUrl.addEventListener("click", openSelectedUrl);
       el.clearPosted.addEventListener("click", clearPosted);
+      el.showAll.addEventListener("click", function () {
+        state.view = "all";
+        updateViewButtons();
+        renderFeed();
+      });
+      el.showPosted.addEventListener("click", function () {
+        state.view = "posted";
+        updateViewButtons();
+        renderFeed();
+      });
     }
 
     async function refresh() {
@@ -435,7 +441,7 @@
         state.items = normalized.items;
         el.updated.textContent = "updated: " + formatTime(data.updatedAt || new Date().toISOString());
         renderSummary(normalized.stats);
-        renderTabs();
+        updateViewButtons();
         renderFeed();
         if (!state.selectedId && state.items.length) selectItem(state.items[0].id);
       } catch (error) {
@@ -484,30 +490,14 @@
       });
     }
 
-    function renderTabs() {
-      const counts = getCounts();
-      el.tabs.innerHTML = "";
-      categories.forEach(function (cat) {
-        const button = document.createElement("button");
-        button.className = "tab" + (state.category === cat ? " active" : "");
-        button.innerHTML = "<span>" + escapeHtml(labels[cat]) + "</span><span class=\"count\">" + (counts[cat] || 0) + "</span>";
-        button.addEventListener("click", function () {
-          state.category = cat;
-          renderTabs();
-          renderFeed();
-        });
-        el.tabs.appendChild(button);
-      });
+    function updateViewButtons() {
+      el.showAll.className = state.view === "all" ? "primary" : "";
+      el.showPosted.className = state.view === "posted" ? "primary" : "";
+      el.showPosted.textContent = "投稿済みだけ見る (" + countPosted() + ")";
     }
 
-    function getCounts() {
-      const counts = { all: state.items.length, posted: 0 };
-      state.items.forEach(function (item) {
-        counts[item.category] = (counts[item.category] || 0) + 1;
-        if (isMarketMovingCandidate(item)) counts.market = (counts.market || 0) + 1;
-        if (state.posted.has(item.id)) counts.posted += 1;
-      });
-      return counts;
+    function countPosted() {
+      return state.items.filter(function (item) { return state.posted.has(item.id); }).length;
     }
 
     function buildStats(valid, fresh) {
@@ -613,9 +603,7 @@
 
     function filteredItems() {
       return state.items.filter(function (item) {
-        if (state.category === "posted" && !state.posted.has(item.id)) return false;
-        if (state.category === "market" && !isMarketMovingCandidate(item)) return false;
-        if (state.category !== "all" && state.category !== "posted" && state.category !== "market" && item.category !== state.category) return false;
+        if (state.view === "posted" && !state.posted.has(item.id)) return false;
         if (!state.query) return true;
         return [item.title, item.source, item.label, item.form, item.ticker].join(" ").toLowerCase().includes(state.query);
       });
@@ -694,7 +682,7 @@
         if (data.ok && Array.isArray(data.ids)) {
           data.ids.forEach(function (id) { state.posted.add(id); });
           saveLocalPosted();
-          renderTabs();
+          updateViewButtons();
           renderFeed();
         }
       } catch (error) {
@@ -706,7 +694,7 @@
       if (posted) state.posted.add(id);
       else state.posted.delete(id);
       saveLocalPosted();
-      renderTabs();
+      updateViewButtons();
       renderFeed();
       try {
         await fetch(postedEndpoint, {
@@ -722,7 +710,7 @@
     function clearPosted() {
       state.posted.clear();
       saveLocalPosted();
-      renderTabs();
+      updateViewButtons();
       renderFeed();
     }
 
