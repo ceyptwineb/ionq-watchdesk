@@ -99,7 +99,7 @@ async function fetchArticleAttempt(url, method) {
       redirect: "follow",
       signal: controller.signal,
       headers: {
-        "user-agent": "Mozilla/5.0 (compatible; IonQWatchdesk/2.0; +https://ionqnews.netlify.app/)",
+        "user-agent": "Mozilla/5.0 (compatible; IonQWatchdesk/2.0; +https://ionqrnews.netlify.app/)",
         "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.7",
         "accept-language": "ja,en-US;q=0.9,en;q=0.8"
       }
