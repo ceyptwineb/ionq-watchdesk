@@ -13,9 +13,9 @@ const STORE_NAME = "ionq-watchdesk";
 const STATE_KEY = "watch-state";
 const POSTED_KEY = "posted-state";
 const DEFAULT_LOOKBACK_MINUTES = 1440;
-const WATCHDESK_FALLBACK_URL = "https://ionqrnews.netlify.app/";
+const WATCHDESK_FALLBACK_URL = "https://ionqwatchdesk.netlify.app/";
 const configuredSiteUrl = (process.env.WATCHDESK_URL || WATCHDESK_FALLBACK_URL).trim();
-const SITE_URL = configuredSiteUrl.includes("ionqnews.netlify.app") ? WATCHDESK_FALLBACK_URL : configuredSiteUrl;
+const SITE_URL = /ionqrnews\.netlify\.app|ionqnews\.netlify\.app/.test(configuredSiteUrl) ? WATCHDESK_FALLBACK_URL : configuredSiteUrl;
 
 exports.handler = async (event = {}) => {
   const startedAt = new Date().toISOString();
@@ -25,7 +25,7 @@ exports.handler = async (event = {}) => {
     if (event.queryStringParameters && event.queryStringParameters.test === "discord") {
       const testItem = {
         title: "通知テスト: IONQ Watchdesk",
-        url: "https://ionqrnews.netlify.app/",
+        url: "https://ionqwatchdesk.netlify.app/",
         source: "watch-ionq",
         publishedAt: startedAt
       };

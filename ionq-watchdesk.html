@@ -374,7 +374,7 @@
 
   <script>
     const APP_VERSION = "clean-collector-20260629";
-    const PUBLIC_ORIGIN = "https://ionqrnews.netlify.app";
+    const PUBLIC_ORIGIN = "https://ionqwatchdesk.netlify.app";
     const GPTS_URL = "https://chatgpt.com/g/g-6a41a5264e6081918db223a3b8a4d808-liang-zi-rehoto";
     const MAX_ITEM_AGE_HOURS = 48;
     const isLocalPreview = location.protocol === "file:" || location.hostname === "127.0.0.1" || location.hostname === "localhost";
@@ -597,14 +597,14 @@
         "</div>",
         "<div class=\"item-actions\">",
         "<label class=\"posted\"><input type=\"checkbox\" " + (state.posted.has(item.id) ? "checked" : "") + ">投稿済み</label>",
-        "<div class=\"row\"><button type=\"button\" data-act=\"copy\">GPTsへコピー</button><button type=\"button\" data-act=\"select\">選択</button></div>",
+        "<div class=\"row\"><button type=\"button\" data-act=\"open-gpts\" class=\"primary\">GPTs\u3092\u958b\u304f</button><button type=\"button\" data-act=\"select\">\u9078\u629e</button></div>",
         "</div>"
       ].join("");
 
       card.querySelector("[data-act='select']").addEventListener("click", function () { selectItem(item.id); });
-      card.querySelector("[data-act='copy']").addEventListener("click", function () {
+      card.querySelector("[data-act='open-gpts']").addEventListener("click", function () {
         selectItem(item.id);
-        copyGptsText();
+        copyAndOpenGpts();
       });
       card.querySelector("input").addEventListener("change", function (event) {
         setPosted(item.id, event.target.checked);
