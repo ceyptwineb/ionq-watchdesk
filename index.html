@@ -197,6 +197,12 @@
       line-height: 1.42;
       overflow-wrap: anywhere;
     }
+    .item-title-original {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+      overflow-wrap: anywhere;
+    }
     .meta {
       display: flex;
       flex-wrap: wrap;
@@ -349,6 +355,7 @@
           <textarea id="gptsText" readonly>左のニュースを選択してください。</textarea>
           <div class="row">
             <button id="copyGpts" class="primary">GPTs用テキストをコピー</button>
+            <button id="openGpts">GPTsを開く</button>
             <button id="copyUrl">URLだけコピー</button>
             <button id="openUrl">元記事を開く</button>
           </div>
@@ -368,6 +375,7 @@
   <script>
     const APP_VERSION = "clean-collector-20260629";
     const PUBLIC_ORIGIN = "https://ionqrnews.netlify.app";
+    const GPTS_URL = "https://chatgpt.com/g/g-6a41a5264e6081918db223a3b8a4d808-liang-zi-rehoto";
     const MAX_ITEM_AGE_HOURS = 48;
     const isLocalPreview = location.protocol === "file:" || location.hostname === "127.0.0.1" || location.hostname === "localhost";
     const API = isLocalPreview ? PUBLIC_ORIGIN : "";
@@ -395,6 +403,7 @@
       detailHead: document.getElementById("detailHead"),
       gptsText: document.getElementById("gptsText"),
       copyGpts: document.getElementById("copyGpts"),
+      openGpts: document.getElementById("openGpts"),
       copyUrl: document.getElementById("copyUrl"),
       openUrl: document.getElementById("openUrl"),
       copyStatus: document.getElementById("copyStatus")
@@ -418,6 +427,7 @@
         renderFeed();
       });
       el.copyGpts.addEventListener("click", copyGptsText);
+      el.openGpts.addEventListener("click", copyAndOpenGpts);
       el.copyUrl.addEventListener("click", copySelectedUrl);
       el.openUrl.addEventListener("click", openSelectedUrl);
       el.clearPosted.addEventListener("click", clearPosted);
@@ -483,6 +493,7 @@
           label: label,
           type: type,
           title: title,
+          titleJa: raw.titleJa || raw.translatedTitle || "",
           source: source,
           publishedAt: publishedAt,
           url: url
@@ -575,17 +586,18 @@
       const card = document.createElement("article");
       card.className = "item" + (priority ? " priority" : "") + (item.id === state.selectedId ? " active" : "");
       card.innerHTML = [
-        "<div class=\"item-title\">" + escapeHtml(item.title) + "</div>",
+        "<div class=\"item-title\">" + escapeHtml(displayTitle(item)) + "</div>",
+        item.titleJa ? "<div class=\"item-title-original\">" + escapeHtml(item.title) + "</div>" : "",
         "<div class=\"meta\">",
         "<span class=\"badge\">" + escapeHtml(item.label) + "</span>",
-        isMarketMovingCandidate(item) ? "<span class=\"badge\">株価材料</span>" : "",
+        renderSignalBadges(item),
         item.form ? "<span class=\"badge\">" + escapeHtml(item.form) + "</span>" : "",
         "<span>" + escapeHtml(item.source || "") + "</span>",
         "<span>" + escapeHtml(formatTime(item.publishedAt)) + "</span>",
         "</div>",
         "<div class=\"item-actions\">",
         "<label class=\"posted\"><input type=\"checkbox\" " + (state.posted.has(item.id) ? "checked" : "") + ">投稿済み</label>",
-        "<div class=\"row\"><button type=\"button\" data-act=\"copy\">URL取得</button><button type=\"button\" data-act=\"select\">選択</button></div>",
+        "<div class=\"row\"><button type=\"button\" data-act=\"copy\">GPTsへコピー</button><button type=\"button\" data-act=\"select\">選択</button></div>",
         "</div>"
       ].join("");
 
@@ -605,7 +617,7 @@
       return state.items.filter(function (item) {
         if (state.view === "posted" && !state.posted.has(item.id)) return false;
         if (!state.query) return true;
-        return [item.title, item.source, item.label, item.form, item.ticker].join(" ").toLowerCase().includes(state.query);
+        return [item.title, item.titleJa, item.source, item.label, item.form, item.ticker].join(" ").toLowerCase().includes(state.query);
       });
     }
 
@@ -614,10 +626,11 @@
       if (!item) return;
       state.selectedId = id;
       el.detailHead.innerHTML = [
-        "<h2>" + escapeHtml(item.title) + "</h2>",
+        "<h2>" + escapeHtml(displayTitle(item)) + "</h2>",
+        item.titleJa ? "<div class=\"item-title-original\">" + escapeHtml(item.title) + "</div>" : "",
         "<div class=\"meta\">",
         "<span class=\"badge\">" + escapeHtml(item.label) + "</span>",
-        isMarketMovingCandidate(item) ? "<span class=\"badge\">株価材料</span>" : "",
+        renderSignalBadges(item),
         item.form ? "<span class=\"badge\">" + escapeHtml(item.form) + "</span>" : "",
         "<span>" + escapeHtml(item.source || "") + "</span>",
         "<span>" + escapeHtml(formatTime(item.publishedAt)) + "</span>",
@@ -629,13 +642,16 @@
       renderFeed();
     }
 
+    function displayTitle(item) {
+      return item.titleJa || item.title || "";
+    }
+
     function buildGptsText(item) {
       return [
         item.url || "",
         "title: " + (item.title || ""),
         "source: " + (item.source || ""),
-        "type: " + (item.label || item.type || ""),
-        isMarketMovingCandidate(item) ? "market: stock-impact-candidate" : ""
+        "type: " + (item.label || item.type || "")
       ].filter(Boolean).join("\n");
     }
 
@@ -646,6 +662,13 @@
       el.copyStatus.innerHTML = "<span class=\"ok\">GPTs用テキストをコピーしました</span>";
     }
 
+    async function copyAndOpenGpts() {
+      const item = selectedItem();
+      if (!item) return;
+      await copyText(buildGptsText(item));
+      el.copyStatus.innerHTML = "<span class=\"ok\">GPTs用テキストをコピーしてChatGPTを開きました</span>";
+      window.open(GPTS_URL, "_blank", "noopener,noreferrer");
+    }
     async function copySelectedUrl() {
       const item = selectedItem();
       if (!item) return;
@@ -781,8 +804,8 @@
       return Date.now() - ms <= MAX_ITEM_AGE_HOURS * 60 * 60 * 1000;
     }
 
-    function isMarketMovingCandidate(item) {
-      const text = [
+    function signalText(item) {
+      return [
         item.title,
         item.source,
         item.label,
@@ -791,6 +814,32 @@
         item.companyName,
         item.ticker
       ].join(" ").toLowerCase();
+    }
+
+    function getSignalBadges(item) {
+      const text = signalText(item);
+      const badges = [];
+      const form = String(item.form || "").toUpperCase();
+
+      if (isMarketMovingCandidate(item)) badges.push("株価材料");
+      if (/breakthrough|logical qubit|error correction|fault tolerant|quantum advantage|qubit|qpu|fidelity|gate|ion trap|trapped ion|superconducting|photonic|laser|amplifier|cryogenic|modular|algorithm/.test(text)) badges.push("技術材料");
+      if (/contract|award|deal|order|booking|bookings|backlog|partnership|strategic|collaboration|customer|deployment|government|defense|commercial|production|data center/.test(text)) badges.push("事業材料");
+      if (/funding|raises|raised|financing|offering|convertible|cash|debt|equity|acquisition|merger|investment/.test(text)) badges.push("資金材料");
+      if (/^(8-K|10-Q|10-K|S-3|424B|13D|13G|SC 13|DEF 14A)/.test(form) || item.category === "sec" || item.category === "competitor") badges.push("SEC/開示");
+      if (!badges.length && item.category === "quantum") badges.push("業界材料");
+      if (!badges.length && item.category === "news") badges.push("ニュース");
+
+      return Array.from(new Set(badges)).slice(0, 3);
+    }
+
+    function renderSignalBadges(item) {
+      return getSignalBadges(item).map(function (label) {
+        return "<span class=\"badge signal\">" + escapeHtml(label) + "</span>";
+      }).join("");
+    }
+
+    function isMarketMovingCandidate(item) {
+      const text = signalText(item);
 
       if (!text.trim()) return false;
 

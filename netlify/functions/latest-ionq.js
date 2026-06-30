@@ -19,7 +19,7 @@ exports.handler = async () => {
       getGoogleNews("(Rigetti OR RGTI OR D-Wave OR QBTS OR \"Quantum Computing Inc\" OR QUBT OR Quantinuum OR \"IBM quantum\" OR \"Google quantum\" OR \"Microsoft quantum\" OR \"AWS Braket\" OR \"NVIDIA quantum\")")
     ]);
 
-    const payload = {
+    const payload = await translateNewsTitles({
       updatedAt: new Date().toISOString(),
       sec,
       officialNews,
@@ -27,7 +27,7 @@ exports.handler = async () => {
       quantumNews,
       competitorSec,
       competitorNews
-    };
+    });
 
     return json(200, payload);
   } catch (error) {
@@ -261,6 +261,68 @@ function normalizeKey(value) {
 function isQuantumRelevant(item) {
   const text = `${item.title || ""} ${item.source || ""}`.toLowerCase();
   return /quantum|qubit|qubits|ion trap|trapped ion|superconducting|photonic|annealing|qpu|qiskit|braket|cuda-q|quantinuum|rigetti|d-wave|pasqal|quera|atom computing|alice & bob|xanadu/.test(text);
+}
+
+async function translateNewsTitles(payload) {
+  const keys = ["officialNews", "marketNews", "quantumNews", "competitorNews"];
+  const titles = Array.from(new Set(keys
+    .flatMap((key) => payload[key] || [])
+    .map((item) => String(item.title || "").trim())
+    .filter(Boolean)
+    .filter(shouldTranslateTitle)
+  ));
+
+  if (!titles.length) return payload;
+
+  const translated = new Map();
+  await runLimited(titles, 4, async (title) => {
+    const ja = await translateToJapanese(title);
+    if (ja && ja !== title) translated.set(title, ja);
+  });
+
+  keys.forEach((key) => {
+    payload[key] = (payload[key] || []).map((item) => {
+      const title = String(item.title || "").trim();
+      const titleJa = translated.get(title);
+      return titleJa ? { ...item, titleJa } : item;
+    });
+  });
+
+  return payload;
+}
+
+function shouldTranslateTitle(title) {
+  if (!title) return false;
+  if (/[\u3040-\u30ff\u3400-\u9fff]/.test(title)) return false;
+  return /[a-zA-Z]/.test(title);
+}
+
+async function translateToJapanese(text) {
+  try {
+    const endpoint = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=ja&dt=t&q=" + encodeURIComponent(text);
+    const response = await fetch(endpoint, {
+      headers: { "User-Agent": "IONQ Watchdesk contact@example.com" }
+    });
+    if (!response.ok) return "";
+    const data = await response.json();
+    return Array.isArray(data && data[0])
+      ? data[0].map((part) => part && part[0] ? part[0] : "").join("").trim()
+      : "";
+  } catch (error) {
+    console.warn(`Translate failed: ${error.message}`);
+    return "";
+  }
+}
+
+async function runLimited(items, limit, worker) {
+  const queue = items.slice();
+  const workers = Array.from({ length: Math.min(limit, queue.length) }, async () => {
+    while (queue.length) {
+      const item = queue.shift();
+      await worker(item);
+    }
+  });
+  await Promise.all(workers);
 }
 
 function parseItems(xml, fallbackSource = "") {
