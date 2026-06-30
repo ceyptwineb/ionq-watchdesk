@@ -824,7 +824,7 @@
       if (isMarketMovingCandidate(item)) badges.push("株価材料");
       if (/breakthrough|logical qubit|error correction|fault tolerant|quantum advantage|qubit|qpu|fidelity|gate|ion trap|trapped ion|superconducting|photonic|laser|amplifier|cryogenic|modular|algorithm/.test(text)) badges.push("技術材料");
       if (/contract|award|deal|order|booking|bookings|backlog|partnership|strategic|collaboration|customer|deployment|government|defense|commercial|production|data center/.test(text)) badges.push("事業材料");
-      if (/funding|raises|raised|financing|offering|convertible|cash|debt|equity|acquisition|merger|investment/.test(text)) badges.push("資金材料");
+      if (/funding|raises|raised|financing|offering|convertible|cash|debt|equity|acquisition|merger|investment|institutional investor|hedge fund|asset manager|etf|holdings|stake|portfolio/.test(text)) badges.push("資金材料");
       if (/^(8-K|10-Q|10-K|S-3|424B|13D|13G|SC 13|DEF 14A)/.test(form) || item.category === "sec" || item.category === "competitor") badges.push("SEC/開示");
       if (!badges.length && item.category === "quantum") badges.push("業界材料");
       if (!badges.length && item.category === "news") badges.push("ニュース");
@@ -853,7 +853,7 @@
         "government", "defense", "army", "navy", "air force", "darpa", "doe", "nasa",
         "funding", "raises", "raised", "financing", "offering", "convertible",
         "acquisition", "merger", "buyout", "investment",
-        "analyst", "upgrade", "downgrade", "price target",
+        "analyst", "upgrade", "downgrade", "price target", "rating", "institutional investor", "hedge fund", "asset manager", "etf", "holdings", "stake", "portfolio",
         "breakthrough", "logical qubit", "error correction", "fault tolerant",
         "quantum advantage", "commercial", "production", "data center"
       ];

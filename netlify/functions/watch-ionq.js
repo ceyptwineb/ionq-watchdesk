@@ -292,6 +292,9 @@ async function getQuantumNews() {
   const googleQueries = [
     "\"quantum computing\" OR \"quantum computer\" OR \"quantum technology\" -IONQ -$IONQ",
     "\"quantum computing\" (startup OR funding OR partnership OR contract OR government OR defense)",
+    "\"quantum computing\" (institutional investor OR hedge fund OR asset manager OR ETF OR holdings OR stake OR portfolio)",
+    "\"quantum computing stocks\" (analyst OR rating OR upgrade OR downgrade OR price target OR investor)",
+    "(IONQ OR Rigetti OR D-Wave OR Quantinuum OR \"Quantum Computing Inc\") (institutional investor OR holdings OR ETF OR analyst OR price target)",
     "\"quantum computing\" (PRNewswire OR GlobeNewswire OR BusinessWire OR \"press release\")",
     "\"quantum error correction\" OR \"logical qubit\" OR \"ion trap\" OR \"superconducting qubit\""
   ];
@@ -356,7 +359,7 @@ function normalizeKey(value) {
 
 function isQuantumRelevant(item) {
   const text = `${item.title || ""} ${item.source || ""}`.toLowerCase();
-  return /quantum|qubit|qubits|ion trap|trapped ion|superconducting|photonic|annealing|qpu|qiskit|braket|cuda-q|quantinuum|rigetti|d-wave|pasqal|quera|atom computing|alice & bob|xanadu/.test(text);
+  return /quantum|qubit|qubits|ion trap|trapped ion|superconducting|photonic|annealing|qpu|qiskit|braket|cuda-q|quantinuum|rigetti|d-wave|pasqal|quera|atom computing|alice & bob|xanadu|institutional investor|hedge fund|asset manager|etf|holdings|stake|portfolio|analyst|price target|upgrade|downgrade|rating/.test(text);
 }
 
 async function getXPosts() {
