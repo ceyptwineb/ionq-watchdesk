@@ -186,7 +186,8 @@ async function decorateJapanese(items, cached) {
       const ja = SEC_FORM_JA[form] || secPrefixJa(form);
       return ja ? { ...item, titleJa: `SEC ${form}: ${ja}` } : item;
     }
-    const ja = translateCache[normalizeSignature(item.title)] || cachedJa.get(item.id);
+    const entry = translateCache[normalizeSignature(item.title)];
+    const ja = (typeof entry === "string" ? entry : "") || cachedJa.get(item.id);
     return ja ? { ...item, titleJa: ja } : item;
   });
 }

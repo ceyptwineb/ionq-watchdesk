@@ -557,8 +557,10 @@ async function applyTranslations(items, deadlineAt = Date.now() + 8000) {
     console.warn("translate cache read failed:", error.message);
   }
 
-  // 表示対象(7日以内)の新しい順に翻訳する。itemsは新着順ソート済みなので
-  // 先頭から拾えば「画面に出るものから日本語になる」。
+  // 表示対象(7日以内)を翻訳する。優先順位:
+  // IONQ直結(ir/news) → SEC → 競合 → 量子業界の順。同カテゴリ内は新しい順。
+  // 「優先度を日本語で判断する」用途なので、IONQに効くものから訳す。
+  const CATEGORY_PRIORITY = { ir: 0, news: 1, sec: 2, competitor: 3, quantum: 4 };
   const windowMs = 7 * 24 * 60 * 60 * 1000;
   const targets = items.filter((item) => {
     if (item.form) return false; // SECは下の静的マップで日本語化
@@ -566,28 +568,41 @@ async function applyTranslations(items, deadlineAt = Date.now() + 8000) {
     const ms = Date.parse(item.publishedAt || item.acceptedAt || "");
     return !Number.isFinite(ms) || Date.now() - ms <= windowMs;
   });
+  // itemsは新着順ソート済み。stable sortなので同カテゴリ内の新着順は保たれる。
+  targets.sort((a, b) =>
+    (CATEGORY_PRIORITY[a.category] !== undefined ? CATEGORY_PRIORITY[a.category] : 9) -
+    (CATEGORY_PRIORITY[b.category] !== undefined ? CATEGORY_PRIORITY[b.category] : 9)
+  );
 
   const pending = [];
   const seen = new Set();
   for (const item of targets) {
     const key = normalizeSignature(item.title);
-    if (cache[key] || seen.has(key)) continue;
+    const entry = cache[key];
+    if (typeof entry === "string") continue;            // 翻訳済み
+    if (entry && entry.fail >= 4) continue;             // 4回失敗したら諦める(枠の無駄遣い防止)
+    if (seen.has(key)) continue;
     seen.add(key);
     pending.push({ key, title: item.title });
     if (pending.length >= MAX_TRANSLATE_PER_RUN) break;
   }
 
   if (pending.length) {
-    let translatedCount = 0;
+    let changed = 0;
     await runLimited(pending, TRANSLATE_CONCURRENCY, async (entry) => {
       if (Date.now() >= deadlineAt) return; // 時間切れ: 残りは次回実行に持ち越し
       const ja = await translateToJapanese(entry.title);
       if (ja && ja !== entry.title) {
         cache[entry.key] = ja;
-        translatedCount += 1;
+        changed += 1;
+      } else {
+        // 失敗を記録。次回以降は他のタイトルに枠を回し、4回で打ち切り。
+        const prev = cache[entry.key];
+        cache[entry.key] = { fail: ((prev && prev.fail) || 0) + 1 };
+        changed += 1;
       }
     });
-    if (translatedCount) {
+    if (changed) {
       try {
         const store = await openStore();
         const keys = Object.keys(cache);
@@ -608,8 +623,8 @@ async function applyTranslations(items, deadlineAt = Date.now() + 8000) {
       const ja = secTitleJa(item);
       return ja ? { ...item, titleJa: ja } : item;
     }
-    const ja = cache[normalizeSignature(item.title)];
-    return ja ? { ...item, titleJa: ja } : item;
+    const entry = cache[normalizeSignature(item.title)];
+    return typeof entry === "string" ? { ...item, titleJa: entry } : item;
   });
 }
 
