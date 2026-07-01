@@ -329,7 +329,7 @@
         <p>48時間以内の情報収集と投稿元ネタ管理</p>
       </div>
       <div class="status-box">
-        <div id="version">version: fast-wire-20260702</div>
+        <div id="version">version: fast-wire-ja-20260702</div>
         <div id="updated">updated: --</div>
         <div id="endpoint">source: --</div>
         <div id="summary">summary: --</div>
@@ -385,7 +385,7 @@
   </main>
 
   <script>
-    const APP_VERSION = "fast-wire-20260702";
+    const APP_VERSION = "fast-wire-ja-20260702";
     const PUBLIC_ORIGIN = "https://ionqwatchdesk.netlify.app";
     const GPTS_URL = "https://chatgpt.com/g/g-6a41a5264e6081918db223a3b8a4d808-liang-zi-rehoto";
     const DEFAULT_MAX_AGE_HOURS = 48;
@@ -630,6 +630,7 @@
         item.titleJa ? "<div class=\"item-title-original\">" + escapeHtml(item.title) + "</div>" : "",
         "<div class=\"meta\">",
         "<span class=\"badge\">" + escapeHtml(item.label) + "</span>",
+        (isUntranslated(item) ? "<span class=\"badge\">翻訳待ち</span>" : ""),
         renderSignalBadges(item),
         item.form ? "<span class=\"badge\">" + escapeHtml(item.form) + "</span>" : "",
         "<span>" + escapeHtml(item.source || "") + "</span>",
@@ -684,6 +685,12 @@
 
     function displayTitle(item) {
       return item.titleJa || item.title || "";
+    }
+
+    function isUntranslated(item) {
+      if (item.titleJa) return false;
+      const text = String(item.title || "");
+      return text && !/[ぁ-んァ-ヶ一-龠]/.test(text);
     }
 
     function buildGptsText(item) {

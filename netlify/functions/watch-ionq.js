@@ -35,15 +35,21 @@ const POSTED_KEY = "posted-state";
 const CACHE_KEY = "latest-cache";
 const TRANSLATE_KEY = "translate-cache";
 const GOOGLE_NEWS_LIMIT = 25;
-const MAX_TRANSLATE_PER_RUN = 15;
+const MAX_TRANSLATE_PER_RUN = 30;
+const TRANSLATE_CONCURRENCY = 6;
 const MAX_NOTIFY_EMBEDS = 5;
 const DEFAULT_LOOKBACK_MINUTES = 1440;
 const FETCH_TIMEOUT_MS = 6000;
 const WATCHDESK_FALLBACK_URL = "https://ionqwatchdesk.netlify.app/";
 const SITE_URL = (process.env.WATCHDESK_URL || WATCHDESK_FALLBACK_URL).trim() || WATCHDESK_FALLBACK_URL;
 
-exports.handler = async (event = {}) => {
+exports.handler = async (event = {}, context = {}) => {
   const startedAt = new Date().toISOString();
+  // 関数タイムアウト(10秒)の1.5秒前を翻訳の締切にする。
+  // 締切が来たら翻訳を打ち切り、残りは次回実行(5分後)がキャッシュ済み分に追加していく。
+  const deadlineAt = typeof context.getRemainingTimeInMillis === "function"
+    ? Date.now() + context.getRemainingTimeInMillis() - 1500
+    : Date.now() + 8000;
 
   try {
     await connectBlobs(event);
@@ -62,7 +68,11 @@ exports.handler = async (event = {}) => {
     // 収集 → 正規化(統一ID付与) → 翻訳 → キャッシュ書き込み
     const collected = await collectLatest();
     let items = normalizeLatestItems(collected);
-    items = await applyTranslations(items);
+
+    // 翻訳前に一度キャッシュを書く(翻訳中にタイムアウトしても表示は生きる)
+    await writeCache({ updatedAt: startedAt, cachedAt: startedAt, items, sourceStats: collected.stats });
+
+    items = await applyTranslations(items, deadlineAt);
 
     await writeCache({
       updatedAt: startedAt,
@@ -537,7 +547,7 @@ function isQuantumRelevant(item) {
 
 // ---------------------------------------------------------------- 翻訳(Blobキャッシュ付き)
 
-async function applyTranslations(items) {
+async function applyTranslations(items, deadlineAt = Date.now() + 8000) {
   let cache = {};
   try {
     const store = await openStore();
@@ -547,42 +557,100 @@ async function applyTranslations(items) {
     console.warn("translate cache read failed:", error.message);
   }
 
-  const targets = items.filter((item) => !item.form && shouldTranslateTitle(item.title));
+  // 表示対象(7日以内)の新しい順に翻訳する。itemsは新着順ソート済みなので
+  // 先頭から拾えば「画面に出るものから日本語になる」。
+  const windowMs = 7 * 24 * 60 * 60 * 1000;
+  const targets = items.filter((item) => {
+    if (item.form) return false; // SECは下の静的マップで日本語化
+    if (!shouldTranslateTitle(item.title)) return false;
+    const ms = Date.parse(item.publishedAt || item.acceptedAt || "");
+    return !Number.isFinite(ms) || Date.now() - ms <= windowMs;
+  });
+
   const pending = [];
   const seen = new Set();
-
   for (const item of targets) {
     const key = normalizeSignature(item.title);
-    if (cache[key]) continue;
-    if (seen.has(key)) continue;
+    if (cache[key] || seen.has(key)) continue;
     seen.add(key);
     pending.push({ key, title: item.title });
     if (pending.length >= MAX_TRANSLATE_PER_RUN) break;
   }
 
   if (pending.length) {
-    await runLimited(pending, 4, async (entry) => {
+    let translatedCount = 0;
+    await runLimited(pending, TRANSLATE_CONCURRENCY, async (entry) => {
+      if (Date.now() >= deadlineAt) return; // 時間切れ: 残りは次回実行に持ち越し
       const ja = await translateToJapanese(entry.title);
-      if (ja && ja !== entry.title) cache[entry.key] = ja;
-    });
-    try {
-      const store = await openStore();
-      const keys = Object.keys(cache);
-      if (keys.length > 800) {
-        const trimmed = {};
-        keys.slice(-600).forEach((k) => { trimmed[k] = cache[k]; });
-        cache = trimmed;
+      if (ja && ja !== entry.title) {
+        cache[entry.key] = ja;
+        translatedCount += 1;
       }
-      await store.set(TRANSLATE_KEY, JSON.stringify(cache));
-    } catch (error) {
-      console.warn("translate cache write failed:", error.message);
+    });
+    if (translatedCount) {
+      try {
+        const store = await openStore();
+        const keys = Object.keys(cache);
+        if (keys.length > 1200) {
+          const trimmed = {};
+          keys.slice(-900).forEach((k) => { trimmed[k] = cache[k]; });
+          cache = trimmed;
+        }
+        await store.set(TRANSLATE_KEY, JSON.stringify(cache));
+      } catch (error) {
+        console.warn("translate cache write failed:", error.message);
+      }
     }
   }
 
   return items.map((item) => {
+    if (item.form) {
+      const ja = secTitleJa(item);
+      return ja ? { ...item, titleJa: ja } : item;
+    }
     const ja = cache[normalizeSignature(item.title)];
     return ja ? { ...item, titleJa: ja } : item;
   });
+}
+
+// SEC書類は定型なので翻訳API不要。フォーム番号を日本語の意味に変換する。
+const SEC_FORM_JA = {
+  "8-K": "臨時報告（重要イベント発生）",
+  "8-K/A": "臨時報告の訂正",
+  "10-Q": "四半期報告",
+  "10-K": "年次報告",
+  "10-K/A": "年次報告の訂正",
+  "S-3": "増資・売出の事前登録",
+  "S-3/A": "増資登録の訂正",
+  "S-8": "従業員株式報酬の登録",
+  "424B3": "目論見書（売出条件）",
+  "424B5": "目論見書（増資・売出条件）",
+  "DEF 14A": "株主総会招集通知（委任状）",
+  "PRE 14A": "株主総会招集通知（事前版）",
+  "SC 13D": "大量保有報告（5%超・支配目的あり）",
+  "SC 13G": "大量保有報告（5%超・純投資）",
+  "SC 13D/A": "大量保有報告の変更",
+  "SC 13G/A": "大量保有報告の変更",
+  "13F-HR": "機関投資家の保有報告"
+};
+
+function secTitleJa(item) {
+  const form = String(item.form || "").toUpperCase();
+  const ja = SEC_FORM_JA[form] || matchSecPrefix(form);
+  if (!ja) return "";
+  const who = item.ticker && item.ticker !== "IONQ" ? `${item.ticker} ` : "";
+  return `${who}SEC ${form}: ${ja}`;
+}
+
+function matchSecPrefix(form) {
+  if (form.startsWith("424B")) return "目論見書（増資・売出条件）";
+  if (form.startsWith("SC 13D")) return "大量保有報告（支配目的あり）";
+  if (form.startsWith("SC 13G")) return "大量保有報告（純投資）";
+  if (form.startsWith("S-3")) return "増資・売出の事前登録";
+  if (form.startsWith("10-Q")) return "四半期報告";
+  if (form.startsWith("10-K")) return "年次報告";
+  if (form.startsWith("8-K")) return "臨時報告（重要イベント発生）";
+  return "";
 }
 
 function shouldTranslateTitle(title) {

@@ -25,10 +25,11 @@ exports.handler = async (event = {}) => {
 
     // フォールバック: キャッシュが無い(初回デプロイ直後など)か古い場合のみ軽量ライブ収集
     const live = await lightCollect();
+    const decorated = await decorateJapanese(live, cached);
     return json(200, {
       updatedAt: new Date().toISOString(),
       cachedAt: cached ? cached.cachedAt : null,
-      items: live,
+      items: decorated,
       cacheStatus: cached ? "stale_fallback" : "miss_fallback",
       note: "キャッシュ未生成のため軽量収集で応答。数分後にwatch-ionqが全ソースを収集します。"
     });
@@ -139,6 +140,66 @@ async function safeGetWires() {
     }
   }));
   return batches.flat();
+}
+
+// フォールバック応答でも日本語表示を維持する。
+// SECは静的マップで即日本語化、ニュースは翻訳キャッシュ(watch-ionqが蓄積)を再利用。
+const SEC_FORM_JA = {
+  "8-K": "臨時報告（重要イベント発生）",
+  "8-K/A": "臨時報告の訂正",
+  "10-Q": "四半期報告",
+  "10-K": "年次報告",
+  "S-3": "増資・売出の事前登録",
+  "S-8": "従業員株式報酬の登録",
+  "424B3": "目論見書（売出条件）",
+  "424B5": "目論見書（増資・売出条件）",
+  "DEF 14A": "株主総会招集通知（委任状）",
+  "PRE 14A": "株主総会招集通知（事前版）",
+  "SC 13D": "大量保有報告（5%超・支配目的あり）",
+  "SC 13G": "大量保有報告（5%超・純投資）"
+};
+
+async function decorateJapanese(items, cached) {
+  let translateCache = {};
+  try {
+    const { getStore } = await import("@netlify/blobs");
+    const opts = { name: STORE_NAME };
+    const siteID = process.env.BLOBS_SITE_ID || process.env.NETLIFY_SITE_ID || process.env.SITE_ID;
+    const token = process.env.BLOBS_TOKEN || process.env.NETLIFY_API_TOKEN || process.env.NETLIFY_AUTH_TOKEN;
+    if (siteID && token) { opts.siteID = siteID; opts.token = token; }
+    const store = getStore(opts);
+    const raw = await store.get("translate-cache");
+    translateCache = raw ? JSON.parse(raw) : {};
+  } catch (error) {
+    translateCache = {};
+  }
+
+  // 古いキャッシュに同じ記事の和訳があればそれも拾う
+  const cachedJa = new Map();
+  ((cached && cached.items) || []).forEach((item) => {
+    if (item.titleJa) cachedJa.set(item.id, item.titleJa);
+  });
+
+  return items.map((item) => {
+    if (item.form) {
+      const form = String(item.form || "").toUpperCase();
+      const ja = SEC_FORM_JA[form] || secPrefixJa(form);
+      return ja ? { ...item, titleJa: `SEC ${form}: ${ja}` } : item;
+    }
+    const ja = translateCache[normalizeSignature(item.title)] || cachedJa.get(item.id);
+    return ja ? { ...item, titleJa: ja } : item;
+  });
+}
+
+function secPrefixJa(form) {
+  if (form.startsWith("424B")) return "目論見書（増資・売出条件）";
+  if (form.startsWith("SC 13D")) return "大量保有報告（支配目的あり）";
+  if (form.startsWith("SC 13G")) return "大量保有報告（純投資）";
+  if (form.startsWith("S-3")) return "増資・売出の事前登録";
+  if (form.startsWith("10-Q")) return "四半期報告";
+  if (form.startsWith("10-K")) return "年次報告";
+  if (form.startsWith("8-K")) return "臨時報告（重要イベント発生）";
+  return "";
 }
 
 function isImportantSec(item) {
