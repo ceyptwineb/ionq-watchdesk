@@ -8,6 +8,15 @@ const MIN_ARTICLE_CHARS = 450;
 exports.handler = async (event = {}) => {
   if (event.httpMethod === "OPTIONS") return cors(204, "");
 
+  // 簡易認証: REPORT_SECRET が設定されている場合、x-report-secret ヘッダーの一致を必須にする。
+  // これが無いと誰でもこのエンドポイントを叩いてOpenAIクレジットを消費できてしまう。
+  const requiredSecret = String(process.env.REPORT_SECRET || "").trim();
+  if (requiredSecret) {
+    const headers = event.headers || {};
+    const given = String(headers["x-report-secret"] || headers["X-Report-Secret"] || "").trim();
+    if (given !== requiredSecret) return cors(401, { ok: false, error: "unauthorized" });
+  }
+
   try {
     if (event.httpMethod === "GET") {
       const query = event.queryStringParameters || parseQuery(event.rawQuery || "");
@@ -339,7 +348,7 @@ function cors(statusCode, body) {
       "cache-control": "no-store",
       "access-control-allow-origin": "*",
       "access-control-allow-methods": "GET,POST,OPTIONS",
-      "access-control-allow-headers": "content-type"
+      "access-control-allow-headers": "content-type,x-report-secret"
     },
     body: typeof body === "string" ? body : JSON.stringify(body)
   };

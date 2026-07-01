@@ -1,35 +1,37 @@
+// IONQ Watchdesk - フロント向けAPI
+// 変更点: 毎回のフル収集をやめ、watch-ionq(cron 5分おき)が書いたBlobキャッシュを返すだけにした。
+// - ページを何回開いてもタイムアウトしない・外部APIを叩かない・表示が一瞬で出る
+// - キャッシュが無い/古い(30分超)場合のみ、軽量ライブ収集(SEC + Nasdaqワイヤーのみ)にフォールバック
+
+const STORE_NAME = "ionq-watchdesk";
+const CACHE_KEY = "latest-cache";
+const CACHE_STALE_MINUTES = 30;
 const SEC_CIK = "0001824920";
-const COMPETITOR_TICKERS = ["RGTI", "QBTS", "QUBT", "IBM", "GOOGL", "MSFT", "AMZN", "HON", "NVDA"];
-const QUANTUM_RSS_FEEDS = [
-  { source: "The Quantum Insider", url: "https://thequantuminsider.com/feed/" },
-  { source: "Quantum Computing Report", url: "https://quantumcomputingreport.com/feed/" },
-  { source: "Inside Quantum Technology", url: "https://www.insidequantumtechnology.com/feed/" },
-  { source: "Quantum Zeitgeist", url: "https://quantumzeitgeist.com/feed/" },
-  { source: "HPCwire", url: "https://www.hpcwire.com/feed/" }
+const FETCH_TIMEOUT_MS = 6000;
+
+const WIRE_FEEDS = [
+  { source: "Nasdaq/IONQ", ticker: "IONQ", url: "https://www.nasdaq.com/feed/rssoutbound?symbol=IONQ", type: "IR" },
+  { source: "Nasdaq/SKYT", ticker: "SKYT", url: "https://www.nasdaq.com/feed/rssoutbound?symbol=SKYT", type: "IR" }
 ];
 
-exports.handler = async () => {
+exports.handler = async (event = {}) => {
   try {
-    const [sec, officialNews, marketNews, quantumNews, competitorSec, competitorNews] = await Promise.all([
-      getSecFilings(),
-      getGoogleNews("site:investors.ionq.com/news/news-details IonQ"),
-      getGoogleNews("IONQ OR $IONQ"),
-      getQuantumNews(),
-      getCompetitorSecFilings(),
-      getGoogleNews("(Rigetti OR RGTI OR D-Wave OR QBTS OR \"Quantum Computing Inc\" OR QUBT OR Quantinuum OR \"IBM quantum\" OR \"Google quantum\" OR \"Microsoft quantum\" OR \"AWS Braket\" OR \"NVIDIA quantum\")")
-    ]);
+    await connectBlobs(event);
 
-    const payload = await translateNewsTitles({
+    const cached = await readCache();
+    if (cached && isCacheFresh(cached)) {
+      return json(200, { ...cached, cacheStatus: "hit" });
+    }
+
+    // フォールバック: キャッシュが無い(初回デプロイ直後など)か古い場合のみ軽量ライブ収集
+    const live = await lightCollect();
+    return json(200, {
       updatedAt: new Date().toISOString(),
-      sec,
-      officialNews,
-      marketNews,
-      quantumNews,
-      competitorSec,
-      competitorNews
+      cachedAt: cached ? cached.cachedAt : null,
+      items: live,
+      cacheStatus: cached ? "stale_fallback" : "miss_fallback",
+      note: "キャッシュ未生成のため軽量収集で応答。数分後にwatch-ionqが全ソースを収集します。"
     });
-
-    return json(200, payload);
   } catch (error) {
     return json(500, {
       updatedAt: new Date().toISOString(),
@@ -39,83 +41,104 @@ exports.handler = async () => {
   }
 };
 
-async function getSecFilings() {
-  return getSecFilingsByCik(SEC_CIK, "IONQ");
+function isCacheFresh(cached) {
+  const ms = Date.parse(cached.cachedAt || cached.updatedAt || "");
+  if (!Number.isFinite(ms)) return false;
+  return Date.now() - ms <= CACHE_STALE_MINUTES * 60 * 1000;
 }
 
-async function getCompetitorSecFilings() {
-  let companies;
+// ---------------------------------------------------------------- 軽量ライブ収集
+
+async function lightCollect() {
+  const [sec, wires] = await Promise.all([
+    safeGetSec(),
+    safeGetWires()
+  ]);
+  const items = [];
+
+  sec.filter(isImportantSec).forEach((item) => items.push(withId({
+    type: "SEC",
+    category: "sec",
+    label: "重要SEC",
+    title: `SEC ${item.form}: ${item.description}`,
+    url: item.url,
+    source: "SEC EDGAR",
+    kind: "SEC開示",
+    form: item.form,
+    description: item.description,
+    publishedAt: item.filingDate,
+    acceptedAt: item.acceptedAt
+  })));
+
+  wires.forEach((item) => items.push(withId({
+    type: "IR",
+    category: "ir",
+    label: "ワイヤー速報",
+    title: item.title,
+    url: item.url,
+    source: item.source,
+    kind: "IR・提携",
+    ticker: item.ticker,
+    publishedAt: item.publishedAt
+  })));
+
+  const seen = new Set();
+  return items
+    .filter((item) => item.title || item.url)
+    .filter((item) => {
+      if (seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    })
+    .sort((a, b) => Date.parse(b.publishedAt || b.acceptedAt || 0) - Date.parse(a.publishedAt || a.acceptedAt || 0));
+}
+
+async function safeGetSec() {
   try {
-    companies = await getCompanyTickerMap();
+    const response = await fetchWithTimeout(`https://data.sec.gov/submissions/CIK${SEC_CIK}.json`, {
+      headers: {
+        "User-Agent": process.env.SEC_USER_AGENT || "IONQ Watchdesk contact@example.com",
+        "Accept": "application/json"
+      }
+    });
+    if (!response.ok) return [];
+    const data = await response.json();
+    const recent = data.filings && data.filings.recent ? data.filings.recent : {};
+    const forms = recent.form || [];
+    return forms.slice(0, 30).map((form, index) => {
+      const accession = recent.accessionNumber[index];
+      const accessionPath = accession.replace(/-/g, "");
+      const cikPath = String(Number(SEC_CIK));
+      return {
+        form,
+        filingDate: recent.filingDate[index],
+        acceptedAt: recent.acceptanceDateTime[index] || "",
+        description: recent.primaryDocDescription[index] || recent.form[index],
+        url: `https://www.sec.gov/Archives/edgar/data/${cikPath}/${accessionPath}/${recent.primaryDocument[index]}`
+      };
+    });
   } catch (error) {
-    console.warn(`Competitor SEC ticker map failed: ${error.message}`);
     return [];
   }
-  const filings = await Promise.all(COMPETITOR_TICKERS.map(async (ticker) => {
-    const company = companies.get(ticker);
-    if (!company) return [];
+}
+
+async function safeGetWires() {
+  const batches = await Promise.all(WIRE_FEEDS.map(async (feed) => {
     try {
-      return await getSecFilingsByCik(company.cik, ticker, company.name);
+      const response = await fetchWithTimeout(feed.url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
+          "Accept": "application/rss+xml,application/xml,text/xml,*/*"
+        }
+      });
+      if (!response.ok) return [];
+      const xml = await response.text();
+      return parseItems(xml, feed.source).slice(0, 15).map((item) => ({ ...item, ticker: feed.ticker }));
     } catch (error) {
-      console.warn(`Competitor SEC failed for ${ticker}: ${error.message}`);
       return [];
     }
   }));
-  return filings.flat().filter(isImportantSec).slice(0, 24);
-}
-
-async function getCompanyTickerMap() {
-  const response = await fetch("https://www.sec.gov/files/company_tickers.json", {
-    headers: {
-      "User-Agent": "IONQ Watchdesk contact@example.com",
-      "Accept": "application/json"
-    }
-  });
-  if (!response.ok) throw new Error(`SEC ticker request failed: ${response.status}`);
-  const payload = await response.json();
-  const map = new Map();
-  Object.values(payload).forEach((entry) => {
-    map.set(String(entry.ticker || "").toUpperCase(), {
-      cik: String(entry.cik_str).padStart(10, "0"),
-      name: entry.title || entry.ticker
-    });
-  });
-  return map;
-}
-
-async function getSecFilingsByCik(cik, ticker, companyName = ticker) {
-  const response = await fetch(`https://data.sec.gov/submissions/CIK${cik}.json`, {
-    headers: {
-      "User-Agent": "IONQ Watchdesk contact@example.com",
-      "Accept": "application/json"
-    }
-  });
-
-  if (!response.ok) {
-    throw new Error(`SEC request failed for ${ticker}: ${response.status}`);
-  }
-
-  const data = await response.json();
-  const recent = data.filings && data.filings.recent ? data.filings.recent : {};
-  const forms = recent.form || [];
-
-  return forms.slice(0, 50).map((form, index) => {
-    const accession = recent.accessionNumber[index];
-    const accessionPath = accession.replace(/-/g, "");
-    const cikPath = String(Number(cik));
-    return {
-      ticker,
-      companyName,
-      form,
-      filingDate: recent.filingDate[index],
-      reportDate: recent.reportDate[index] || "",
-      acceptedAt: recent.acceptanceDateTime[index] || "",
-      accessionNumber: accession,
-      primaryDocument: recent.primaryDocument[index],
-      description: recent.primaryDocDescription[index] || recent.form[index],
-      url: `https://www.sec.gov/Archives/edgar/data/${cikPath}/${accessionPath}/${recent.primaryDocument[index]}`
-    };
-  });
+  return batches.flat();
 }
 
 function isImportantSec(item) {
@@ -127,211 +150,75 @@ function isImportantSec(item) {
     /PROSPECTUS|CURRENT REPORT|QUARTERLY|ANNUAL/.test(description);
 }
 
-async function getXPosts() {
-  if (!process.env.X_BEARER_TOKEN) return { posts: [], status: "token_missing" };
+// 統一ID: watch-ionq.js / index.html と完全に同じロジック。変更時は3ファイル同時に。
+function withId(item) {
+  return { ...item, id: stableId(item) };
+}
 
-  const bearerToken = process.env.X_BEARER_TOKEN
-    .trim()
-    .replace(/^['"]|['"]$/g, "")
-    .replace(/^Bearer\s+/i, "")
-    .trim();
-  if (!bearerToken) return { posts: [], status: "token_missing" };
-
-  const listId = process.env.X_LIST_ID || "2068093425489264980";
-  const params = new URLSearchParams({
-    max_results: "25",
-    "tweet.fields": "created_at,public_metrics,author_id,lang",
-    expansions: "author_id",
-    "user.fields": "username,name,verified"
-  });
-
-  const response = await fetch(`https://api.x.com/2/lists/${listId}/tweets?${params}`, {
-    headers: {
-      "Authorization": `Bearer ${bearerToken}`,
-      "Accept": "application/json"
-    }
-  });
-
-  if (!response.ok) {
-    console.warn(`X request failed: ${response.status}`);
-    return { posts: [], status: `api_${response.status}` };
+function stableId(item) {
+  const basis = item.form
+    ? `${item.type}|${item.url || item.title || ""}`
+    : `${item.type}|${normalizeSignature(item.title)}`;
+  let hash = 2166136261;
+  for (let i = 0; i < basis.length; i += 1) {
+    hash ^= basis.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
   }
-
-  const payload = await response.json();
-  const users = new Map((payload.includes && payload.includes.users || []).map((user) => [user.id, user]));
-
-  const posts = (payload.data || []).map((post) => {
-    const user = users.get(post.author_id) || {};
-    return {
-      title: post.text,
-      url: user.username ? `https://x.com/${user.username}/status/${post.id}` : `https://x.com/i/web/status/${post.id}`,
-      source: user.username ? `@${user.username}` : "X",
-      curatedList: true,
-      publishedAt: post.created_at,
-      metrics: post.public_metrics || {}
-    };
-  });
-
-  return { posts, status: posts.length ? "list_ok" : "no_recent_posts" };
+  return "n" + (hash >>> 0).toString(16);
 }
 
-async function getGoogleNews(query) {
-  const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}%20when%3A7d&hl=en-US&gl=US&ceid=US:en`;
-  const response = await fetch(url, {
-    headers: {
-      "User-Agent": "IONQ Watchdesk contact@example.com",
-      "Accept": "application/rss+xml,text/xml"
-    }
-  });
-
-  if (!response.ok) {
-    throw new Error(`Google News request failed: ${response.status}`);
-  }
-
-  const xml = await response.text();
-  return parseItems(xml).slice(0, 8);
-}
-
-async function getQuantumNews() {
-  const googleQueries = [
-    "\"quantum computing\" OR \"quantum computer\" OR \"quantum technology\" -IONQ -$IONQ",
-    "\"quantum computing\" (startup OR funding OR partnership OR contract OR government OR defense)",
-    "\"quantum computing\" (institutional investor OR hedge fund OR asset manager OR ETF OR holdings OR stake OR portfolio)",
-    "\"quantum computing stocks\" (analyst OR rating OR upgrade OR downgrade OR price target OR investor)",
-    "(IONQ OR Rigetti OR D-Wave OR Quantinuum OR \"Quantum Computing Inc\") (institutional investor OR holdings OR ETF OR analyst OR price target)",
-    "\"quantum computing\" (PRNewswire OR GlobeNewswire OR BusinessWire OR \"press release\")",
-    "\"quantum error correction\" OR \"logical qubit\" OR \"ion trap\" OR \"superconducting qubit\""
-  ];
-
-  const batches = await Promise.all([
-    ...googleQueries.map((query) => safeGetGoogleNews(query)),
-    ...QUANTUM_RSS_FEEDS.map((feed) => safeGetFeed(feed))
-  ]);
-
-  return dedupeItems(batches.flat())
-    .filter(isQuantumRelevant)
-    .sort((a, b) => Date.parse(b.publishedAt || 0) - Date.parse(a.publishedAt || 0))
-    .slice(0, 30);
-}
-
-async function safeGetGoogleNews(query) {
-  try {
-    return await getGoogleNews(query);
-  } catch (error) {
-    console.warn(`Google quantum query failed: ${error.message}`);
-    return [];
-  }
-}
-
-async function safeGetFeed(feed) {
-  try {
-    const response = await fetch(feed.url, {
-      headers: {
-        "User-Agent": "IONQ Watchdesk contact@example.com",
-        "Accept": "application/rss+xml,application/atom+xml,text/xml"
-      }
-    });
-    if (!response.ok) throw new Error(`feed_${response.status}`);
-    const xml = await response.text();
-    return parseItems(xml, feed.source).slice(0, 12);
-  } catch (error) {
-    console.warn(`Quantum feed failed ${feed.source}: ${error.message}`);
-    return [];
-  }
-}
-
-function dedupeItems(items) {
-  const seen = new Set();
-  const output = [];
-  for (const item of items) {
-    const key = normalizeKey(item.url || item.title);
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    output.push(item);
-  }
-  return output;
-}
-
-function normalizeKey(value) {
-  return String(value || "")
+function normalizeSignature(text) {
+  return String(text || "")
     .toLowerCase()
-    .replace(/^https?:\/\/(www\.)?/, "")
-    .replace(/[?#].*$/, "")
-    .replace(/\/$/, "")
+    .replace(/https?:\/\/\S+/g, "")
+    .replace(/\s+-\s+[^-|]+$/g, "")
+    .replace(/[\s　]+/g, " ")
     .trim();
 }
 
-function isQuantumRelevant(item) {
-  const text = `${item.title || ""} ${item.source || ""}`.toLowerCase();
-  return /quantum|qubit|qubits|ion trap|trapped ion|superconducting|photonic|annealing|qpu|qiskit|braket|cuda-q|quantinuum|rigetti|d-wave|pasqal|quera|atom computing|alice & bob|xanadu|institutional investor|hedge fund|asset manager|etf|holdings|stake|portfolio|analyst|price target|upgrade|downgrade|rating/.test(text);
-}
+// ---------------------------------------------------------------- Blobs/HTTP/XML
 
-async function translateNewsTitles(payload) {
-  const keys = ["officialNews", "marketNews", "quantumNews", "competitorNews"];
-  const titles = Array.from(new Set(keys
-    .flatMap((key) => payload[key] || [])
-    .map((item) => String(item.title || "").trim())
-    .filter(Boolean)
-    .filter(shouldTranslateTitle)
-  ));
-
-  if (!titles.length) return payload;
-
-  const translated = new Map();
-  await runLimited(titles, 4, async (title) => {
-    const ja = await translateToJapanese(title);
-    if (ja && ja !== title) translated.set(title, ja);
-  });
-
-  keys.forEach((key) => {
-    payload[key] = (payload[key] || []).map((item) => {
-      const title = String(item.title || "").trim();
-      const titleJa = translated.get(title);
-      return titleJa ? { ...item, titleJa } : item;
-    });
-  });
-
-  return payload;
-}
-
-function shouldTranslateTitle(title) {
-  if (!title) return false;
-  if (/[\u3040-\u30ff\u3400-\u9fff]/.test(title)) return false;
-  return /[a-zA-Z]/.test(title);
-}
-
-async function translateToJapanese(text) {
+async function connectBlobs(event) {
   try {
-    const endpoint = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=ja&dt=t&q=" + encodeURIComponent(text);
-    const response = await fetch(endpoint, {
-      headers: { "User-Agent": "IONQ Watchdesk contact@example.com" }
-    });
-    if (!response.ok) return "";
-    const data = await response.json();
-    return Array.isArray(data && data[0])
-      ? data[0].map((part) => part && part[0] ? part[0] : "").join("").trim()
-      : "";
+    const { connectLambda } = await import("@netlify/blobs");
+    if (typeof connectLambda === "function") connectLambda(event);
   } catch (error) {
-    console.warn(`Translate failed: ${error.message}`);
-    return "";
+    console.warn("connectLambda unavailable:", error.message);
   }
 }
 
-async function runLimited(items, limit, worker) {
-  const queue = items.slice();
-  const workers = Array.from({ length: Math.min(limit, queue.length) }, async () => {
-    while (queue.length) {
-      const item = queue.shift();
-      await worker(item);
+async function readCache() {
+  try {
+    const { getStore } = await import("@netlify/blobs");
+    const opts = { name: STORE_NAME };
+    const siteID = process.env.BLOBS_SITE_ID || process.env.NETLIFY_SITE_ID || process.env.SITE_ID;
+    const token = process.env.BLOBS_TOKEN || process.env.NETLIFY_API_TOKEN || process.env.NETLIFY_AUTH_TOKEN;
+    if (siteID && token) {
+      opts.siteID = siteID;
+      opts.token = token;
     }
-  });
-  await Promise.all(workers);
+    const store = getStore(opts);
+    const value = await store.get(CACHE_KEY);
+    return value ? JSON.parse(value) : null;
+  } catch (error) {
+    console.warn("cache read failed:", error.message);
+    return null;
+  }
+}
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = FETCH_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function parseItems(xml, fallbackSource = "") {
   const items = [];
-  const itemMatches = xml.match(/<item>[\s\S]*?<\/item>/g) || [];
-
+  const itemMatches = xml.match(/<item[\s>][\s\S]*?<\/item>/g) || [];
   for (const itemXml of itemMatches) {
     items.push({
       title: cleanXml(readTag(itemXml, "title")),
@@ -340,19 +227,7 @@ function parseItems(xml, fallbackSource = "") {
       source: cleanXml(readTag(itemXml, "source")) || fallbackSource
     });
   }
-
-  const entryMatches = xml.match(/<entry[\s\S]*?<\/entry>/g) || [];
-  for (const entryXml of entryMatches) {
-    const href = (entryXml.match(/<link[^>]+href=["']([^"']+)["'][^>]*>/i) || [])[1] || "";
-    items.push({
-      title: cleanXml(readTag(entryXml, "title")),
-      url: cleanXml(href || readTag(entryXml, "link")),
-      publishedAt: cleanXml(readTag(entryXml, "updated") || readTag(entryXml, "published")),
-      source: fallbackSource
-    });
-  }
-
-  return items;
+  return items.filter((item) => item.title || item.url);
 }
 
 function readTag(xml, tag) {
@@ -377,8 +252,7 @@ function json(statusCode, body) {
     statusCode,
     headers: {
       "content-type": "application/json; charset=utf-8",
-      "cache-control": "no-store",
-      "access-control-allow-origin": "*"
+      "cache-control": "no-store"
     },
     body: JSON.stringify(body)
   };

@@ -301,6 +301,11 @@
       text-align: center;
     }
 
+    .item.done { opacity: .5; }
+    .item.done .item-title { text-decoration: line-through; }
+    .age-tabs { display: flex; gap: 6px; }
+    .age-tabs button { padding: 4px 10px; font-size: 12px; }
+
     @media (max-width: 980px) {
       .app { grid-template-columns: 1fr; }
       .side, .main, .detail {
@@ -324,7 +329,7 @@
         <p>48時間以内の情報収集と投稿元ネタ管理</p>
       </div>
       <div class="status-box">
-        <div id="version">version: clean-collector-20260629</div>
+        <div id="version">version: fast-wire-20260702</div>
         <div id="updated">updated: --</div>
         <div id="endpoint">source: --</div>
         <div id="summary">summary: --</div>
@@ -340,6 +345,13 @@
         <input id="search" class="search wide" type="search" placeholder="ニュース検索">
         <button id="reload" class="primary">更新</button>
         <button id="clearPosted" class="ghost">投稿済みクリア</button>
+      </div>
+      <div class="toolbar">
+        <div class="age-tabs wide">
+          <button id="age48" class="primary" type="button">48h</button>
+          <button id="age72" type="button">72h</button>
+          <button id="age168" type="button">7日</button>
+        </div>
       </div>
       <div id="feed" class="feed"></div>
     </section>
@@ -373,21 +385,23 @@
   </main>
 
   <script>
-    const APP_VERSION = "clean-collector-20260629";
+    const APP_VERSION = "fast-wire-20260702";
     const PUBLIC_ORIGIN = "https://ionqwatchdesk.netlify.app";
     const GPTS_URL = "https://chatgpt.com/g/g-6a41a5264e6081918db223a3b8a4d808-liang-zi-rehoto";
-    const MAX_ITEM_AGE_HOURS = 48;
+    const DEFAULT_MAX_AGE_HOURS = 48;
     const isLocalPreview = location.protocol === "file:" || location.hostname === "127.0.0.1" || location.hostname === "localhost";
     const API = isLocalPreview ? PUBLIC_ORIGIN : "";
     const latestEndpoint = API + "/.netlify/functions/latest-ionq";
     const postedEndpoint = API + "/.netlify/functions/posted";
 
     const state = {
+      rawItems: [],
       items: [],
       posted: new Set(loadLocalPosted()),
       selectedId: "",
       view: "all",
-      query: ""
+      query: "",
+      maxAgeHours: DEFAULT_MAX_AGE_HOURS
     };
 
     const el = {
@@ -406,7 +420,10 @@
       openGpts: document.getElementById("openGpts"),
       copyUrl: document.getElementById("copyUrl"),
       openUrl: document.getElementById("openUrl"),
-      copyStatus: document.getElementById("copyStatus")
+      copyStatus: document.getElementById("copyStatus"),
+      age48: document.getElementById("age48"),
+      age72: document.getElementById("age72"),
+      age168: document.getElementById("age168")
     };
 
     init();
@@ -431,6 +448,9 @@
       el.copyUrl.addEventListener("click", copySelectedUrl);
       el.openUrl.addEventListener("click", openSelectedUrl);
       el.clearPosted.addEventListener("click", clearPosted);
+      [[el.age48, 48], [el.age72, 72], [el.age168, 168]].forEach(function (pair) {
+        pair[0].addEventListener("click", function () { setMaxAge(pair[1]); });
+      });
       el.showAll.addEventListener("click", function () {
         state.view = "all";
         updateViewButtons();
@@ -447,10 +467,13 @@
       el.updated.textContent = "updated: loading";
       try {
         const data = await fetchJson(latestEndpoint, 12000);
-        const normalized = normalizeLatest(data);
-        state.items = normalized.items;
-        el.updated.textContent = "updated: " + formatTime(data.updatedAt || new Date().toISOString());
-        renderSummary(normalized.stats);
+        state.rawItems = extractItems(data);
+        applyAgeFilter();
+        const cachedAt = data.cachedAt || data.updatedAt || new Date().toISOString();
+        const cacheNote = data.cacheStatus === "hit" ? "" :
+          data.cacheStatus === "stale_fallback" ? " (キャッシュ古/軽量応答)" :
+          data.cacheStatus === "miss_fallback" ? " (初回/軽量応答)" : "";
+        el.updated.textContent = "updated: " + formatTime(cachedAt) + cacheNote;
         updateViewButtons();
         renderFeed();
         if (!state.selectedId && state.items.length) selectItem(state.items[0].id);
@@ -461,7 +484,10 @@
       }
     }
 
-    function normalizeLatest(data) {
+    // 新形式(data.items: バックエンドで正規化・ID付与済み)を優先。
+    // 旧形式のレスポンスが来た場合のフォールバックも残す。
+    function extractItems(data) {
+      if (Array.isArray(data.items)) return data.items;
       const rows = [];
       addRows(rows, data.officialNews, "ir", "最新IR", "IR");
       addRows(rows, data.sec, "sec", "重要SEC", "SEC");
@@ -469,15 +495,26 @@
       addRows(rows, data.quantumNews, "quantum", "量子業界", "QNEWS");
       addRows(rows, data.competitorSec, "competitor", "競合SEC", "CSEC");
       addRows(rows, data.competitorNews, "competitor", "競合NEWS", "CNEWS");
-      const valid = rows.filter(function (item) { return item.title || item.url; });
-      const fresh = valid.filter(function (item) { return isFreshItem(item); });
-      return {
-        items: fresh
-        .sort(function (a, b) {
-          return Date.parse(b.publishedAt || b.acceptedAt || 0) - Date.parse(a.publishedAt || a.acceptedAt || 0);
-        }),
-        stats: buildStats(valid, fresh)
-      };
+      return rows;
+    }
+
+    function setMaxAge(hours) {
+      state.maxAgeHours = hours;
+      [[el.age48, 48], [el.age72, 72], [el.age168, 168]].forEach(function (pair) {
+        pair[0].className = state.maxAgeHours === pair[1] ? "primary" : "";
+      });
+      applyAgeFilter();
+      updateViewButtons();
+      renderFeed();
+    }
+
+    function applyAgeFilter() {
+      const valid = state.rawItems.filter(function (item) { return item.title || item.url; });
+      const fresh = valid.filter(isFreshItem);
+      state.items = fresh.sort(function (a, b) {
+        return Date.parse(b.publishedAt || b.acceptedAt || 0) - Date.parse(a.publishedAt || a.acceptedAt || 0);
+      });
+      renderSummary(buildStats(valid, fresh));
     }
 
     function addRows(rows, list, category, label, type) {
@@ -486,9 +523,8 @@
         const source = raw.source || raw.companyName || raw.ticker || label;
         const publishedAt = raw.publishedAt || raw.acceptedAt || raw.filingDate || raw.reportDate || "";
         const url = raw.url || "";
-        const id = stableId([type, title, source, url, publishedAt, raw.accessionNumber].join("|"));
         rows.push(Object.assign({}, raw, {
-          id: id,
+          id: stableId({ type: type, form: raw.form, url: url, title: title }),
           category: category,
           label: label,
           type: type,
@@ -504,7 +540,10 @@
     function updateViewButtons() {
       el.showAll.className = state.view === "all" ? "primary" : "";
       el.showPosted.className = state.view === "posted" ? "primary" : "";
-      el.showPosted.textContent = "投稿済みだけ見る (" + countPosted() + ")";
+      const posted = countPosted();
+      const unposted = state.items.length - posted;
+      el.showAll.textContent = "最新ニュースを見る (未投稿 " + unposted + ")";
+      el.showPosted.textContent = "投稿済みだけ見る (" + posted + ")";
     }
 
     function countPosted() {
@@ -540,7 +579,7 @@
       }
       const parts = [
         "取得 " + stats.total + "件",
-        "48h " + stats.fresh + "件",
+        state.maxAgeHours + "h " + stats.fresh + "件",
         "除外 " + stats.old + "件"
       ];
       el.summary.textContent = "summary: " + parts.join(" / ");
@@ -559,8 +598,8 @@
         const empty = document.createElement("div");
         empty.className = "empty";
         empty.innerHTML = [
-          "<div>48時間以内の表示対象ニュースはありません。</div>",
-          "<div class=\"muted\">左の summary が「取得あり / 48h 0件」なら、取得は成功して古い記事だけが除外されています。</div>"
+          "<div>" + state.maxAgeHours + "時間以内の表示対象ニュースはありません。</div>",
+          "<div class=\"muted\">上の 48h / 72h / 7日 ボタンで表示期間を広げられます。</div>"
         ].join("");
         el.feed.appendChild(empty);
         return;
@@ -584,7 +623,8 @@
 
     function appendItemCard(parent, item, priority) {
       const card = document.createElement("article");
-      card.className = "item" + (priority ? " priority" : "") + (item.id === state.selectedId ? " active" : "");
+      const done = state.posted.has(item.id);
+      card.className = "item" + (priority ? " priority" : "") + (item.id === state.selectedId ? " active" : "") + (done ? " done" : "");
       card.innerHTML = [
         "<div class=\"item-title\">" + escapeHtml(displayTitle(item)) + "</div>",
         item.titleJa ? "<div class=\"item-title-original\">" + escapeHtml(item.title) + "</div>" : "",
@@ -730,11 +770,22 @@
       }
     }
 
-    function clearPosted() {
+    async function clearPosted() {
+      if (!confirm("投稿済みチェックを全端末で全消去します。よろしいですか？")) return;
       state.posted.clear();
       saveLocalPosted();
       updateViewButtons();
       renderFeed();
+      try {
+        // サーバー側もクリアしないと次回同期で復活してしまう
+        await fetch(postedEndpoint, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ clear: true })
+        });
+      } catch (error) {
+        // Local state is enough if shared state is unavailable.
+      }
     }
 
     async function fetchJson(url, timeoutMs) {
@@ -787,21 +838,36 @@
       localStorage.setItem("ionq-collector-posted", JSON.stringify(Array.from(state.posted).slice(-1000)));
     }
 
-    function stableId(value) {
+    // ============================================================
+    // 統一ID: watch-ionq.js / latest-ionq.js のstableIdと完全に同じロジック。
+    // 片方を変えるときは必ず3ファイル同時に変えること。
+    // ============================================================
+    function stableId(item) {
+      const basis = item.form
+        ? String(item.type || "") + "|" + String(item.url || item.title || "")
+        : String(item.type || "") + "|" + normalizeSignature(item.title);
       let hash = 2166136261;
-      const text = String(value || "");
-      for (let i = 0; i < text.length; i += 1) {
-        hash ^= text.charCodeAt(i);
+      for (let i = 0; i < basis.length; i += 1) {
+        hash ^= basis.charCodeAt(i);
         hash = Math.imul(hash, 16777619);
       }
-      return "i" + (hash >>> 0).toString(16);
+      return "n" + (hash >>> 0).toString(16);
+    }
+
+    function normalizeSignature(text) {
+      return String(text || "")
+        .toLowerCase()
+        .replace(/https?:\/\/\S+/g, "")
+        .replace(/\s+-\s+[^-|]+$/g, "")
+        .replace(/[\s　]+/g, " ")
+        .trim();
     }
 
     function isFreshItem(item) {
       const value = item.publishedAt || item.acceptedAt || item.filingDate || item.reportDate || "";
       const ms = Date.parse(value);
       if (!Number.isFinite(ms)) return true;
-      return Date.now() - ms <= MAX_ITEM_AGE_HOURS * 60 * 60 * 1000;
+      return Date.now() - ms <= state.maxAgeHours * 60 * 60 * 1000;
     }
 
     function signalText(item) {

@@ -28,6 +28,13 @@ exports.handler = async (event = {}) => {
     if (event.httpMethod === "POST") {
       const body = parseBody(event.body);
 
+      // 全クリア（フロントの「投稿済みクリア」がローカルしか消さず、
+      // 次回同期でサーバー分が復活するバグの修正）
+      if (body.clear === true) {
+        await store.set(POSTED_KEY, JSON.stringify({ ids: [] }));
+        return cors(200, { ok: true, ids: [] });
+      }
+
       // 一括追加（端末ローカルにしか無かった分をサーバーへ吸い上げる用途）
       if (Array.isArray(body.addIds)) {
         body.addIds.forEach((id) => ids.add(String(id)));
