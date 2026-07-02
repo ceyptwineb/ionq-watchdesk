@@ -134,7 +134,7 @@
       background: var(--panel);
       border-bottom: 1px solid var(--line);
       display: grid;
-      grid-template-columns: minmax(0, 1fr) auto auto;
+      grid-template-columns: minmax(0, 1fr) auto auto auto;
       gap: 8px;
       align-items: center;
     }
@@ -329,7 +329,7 @@
         <p>48時間以内の情報収集と投稿元ネタ管理</p>
       </div>
       <div class="status-box">
-        <div id="version">version: similar-merge-20260702</div>
+        <div id="version">version: mark-all-20260702</div>
         <div id="updated">updated: --</div>
         <div id="endpoint">source: --</div>
         <div id="summary">summary: --</div>
@@ -344,6 +344,7 @@
       <div class="toolbar">
         <input id="search" class="search wide" type="search" placeholder="ニュース検索">
         <button id="reload" class="primary">更新</button>
+        <button id="markAllPosted">表示中を全部投稿済み</button>
         <button id="clearPosted" class="ghost">投稿済みクリア</button>
       </div>
       <div class="toolbar">
@@ -385,7 +386,7 @@
   </main>
 
   <script>
-    const APP_VERSION = "similar-merge-20260702";
+    const APP_VERSION = "mark-all-20260702";
     const PUBLIC_ORIGIN = "https://ionqwatchdesk.netlify.app";
     const GPTS_URL = "https://chatgpt.com/g/g-6a41a5264e6081918db223a3b8a4d808-liang-zi-rehoto";
     const DEFAULT_MAX_AGE_HOURS = 48;
@@ -413,6 +414,7 @@
       feed: document.getElementById("feed"),
       search: document.getElementById("search"),
       reload: document.getElementById("reload"),
+      markAllPosted: document.getElementById("markAllPosted"),
       clearPosted: document.getElementById("clearPosted"),
       detailHead: document.getElementById("detailHead"),
       gptsText: document.getElementById("gptsText"),
@@ -449,6 +451,7 @@
       el.openGpts.addEventListener("click", copyAndOpenGpts);
       el.copyUrl.addEventListener("click", copySelectedUrl);
       el.openUrl.addEventListener("click", openSelectedUrl);
+      el.markAllPosted.addEventListener("click", markAllPosted);
       el.clearPosted.addEventListener("click", clearPosted);
       [[el.age48, 48], [el.age72, 72], [el.age168, 168]].forEach(function (pair) {
         pair[0].addEventListener("click", function () { setMaxAge(pair[1]); });
@@ -765,6 +768,7 @@
     const pendingOps = new Map(); // id -> 望みの状態(true/false)
 
     async function loadPostedFromServer() {
+      await flushPendingOps();
       try {
         const data = await fetchJson(postedEndpoint, 8000);
         if (data.ok && Array.isArray(data.ids)) {
@@ -772,6 +776,35 @@
         }
       } catch (error) {
         // サーバーに届かない時だけローカルの控えで表示を維持する
+      }
+    }
+
+    // 送信に失敗して残っている操作を再送する(60秒ごとの同期時に呼ばれる)。
+    // pendingOpsは「表示の保護」だけでなく「送信待ちキュー」を兼ねる。
+    async function flushPendingOps() {
+      if (!pendingOps.size) return;
+      const add = [];
+      const del = [];
+      pendingOps.forEach(function (want, id) { (want ? add : del).push(id); });
+      try {
+        if (add.length) {
+          const response = await fetch(postedEndpoint, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ ids: add, posted: true })
+          });
+          if (response.ok) add.forEach(function (id) { pendingOps.delete(id); });
+        }
+        if (del.length) {
+          const response = await fetch(postedEndpoint, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ ids: del, posted: false })
+          });
+          if (response.ok) del.forEach(function (id) { pendingOps.delete(id); });
+        }
+      } catch (error) {
+        // まだ届かない。次の同期で再挑戦する。
       }
     }
 
@@ -822,6 +855,47 @@
         if (response.ok) ids.forEach(function (id) { pendingOps.delete(id); });
       } catch (error) {
         // 失敗時はpendingに残し、次の同期でも意思を優先し続ける
+      }
+    }
+
+    // 表示中(検索・期間タブ適用後)の未チェック記事を一括で投稿済みにする。
+    // 「ここまでは確認済み、以降の新着だけ見たい」用。
+    async function markAllPosted() {
+      const targets = filteredItems().filter(function (item) { return !isPosted(item); });
+      if (!targets.length) {
+        el.copyStatus.innerHTML = "<span class=\"warn\">表示中に未チェックの記事はありません</span>";
+        return;
+      }
+      if (!confirm("表示中の未チェック " + targets.length + " 件をすべて投稿済みにします。よろしいですか？")) return;
+      const idSet = new Set();
+      targets.forEach(function (target) {
+        [target.id, target.legacyId].forEach(function (id) { if (id) idSet.add(id); });
+      });
+      const ids = Array.from(idSet);
+      ids.forEach(function (id) {
+        pendingOps.set(id, true);
+        state.posted.add(id);
+      });
+      saveLocalPosted();
+      refreshSimilarPostedFlags();
+      updateViewButtons();
+      renderFeed();
+      el.copyStatus.innerHTML = "<span class=\"ok\">" + targets.length + " 件を投稿済みにしました(同期中)</span>";
+      // サーバー書き込みは1回のPOSTだと件数が多い時に関数タイムアウトの恐れが
+      // あるため、40IDずつに分けて送る。失敗した分はpendingが守る。
+      try {
+        for (let i = 0; i < ids.length; i += 40) {
+          const chunk = ids.slice(i, i + 40);
+          const response = await fetch(postedEndpoint, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ ids: chunk, posted: true })
+          });
+          if (response.ok) chunk.forEach(function (id) { pendingOps.delete(id); });
+        }
+        el.copyStatus.innerHTML = "<span class=\"ok\">" + targets.length + " 件を投稿済みにしました</span>";
+      } catch (error) {
+        el.copyStatus.innerHTML = "<span class=\"warn\">一部の同期に失敗(60秒後の自動同期で再送されます)</span>";
       }
     }
 
