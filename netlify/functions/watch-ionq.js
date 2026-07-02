@@ -504,8 +504,21 @@ function withId(item) {
 function stableId(item) {
   const basis = item.form
     ? `F|${item.url || item.title || ""}`
-    : `N|${normalizeSignature(item.title)}`;
+    : `N|${normalizeSignatureV2(item.title)}`;
   return "u" + fnvHash(basis);
+}
+
+// 新IDの基礎になる正規化(V2)。"IonQ (IONQ) Launches..." のような
+// ティッカー括弧だけの差を吸収して同一記事を同一IDにする。
+// legacyStableIdは旧normalizeSignatureのまま(過去チェック引き継ぎ用)。
+function normalizeSignatureV2(text) {
+  return String(text || "")
+    .toLowerCase()
+    .replace(/https?:\/\/\S+/g, "")
+    .replace(/\s+-\s+[^-|]+$/g, "")
+    .replace(/\((?:nyse|nasdaq|otcmkts|otc|asx)?[:\s]*[a-z]{1,6}\)/g, " ")
+    .replace(/[\s　]+/g, " ")
+    .trim();
 }
 
 function legacyStableId(item) {

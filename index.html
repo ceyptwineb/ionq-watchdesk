@@ -329,7 +329,7 @@
         <p>48時間以内の情報収集と投稿元ネタ管理</p>
       </div>
       <div class="status-box">
-        <div id="version">version: unified-id-20260702</div>
+        <div id="version">version: similar-merge-20260702</div>
         <div id="updated">updated: --</div>
         <div id="endpoint">source: --</div>
         <div id="summary">summary: --</div>
@@ -385,7 +385,7 @@
   </main>
 
   <script>
-    const APP_VERSION = "unified-id-20260702";
+    const APP_VERSION = "similar-merge-20260702";
     const PUBLIC_ORIGIN = "https://ionqwatchdesk.netlify.app";
     const GPTS_URL = "https://chatgpt.com/g/g-6a41a5264e6081918db223a3b8a4d808-liang-zi-rehoto";
     const DEFAULT_MAX_AGE_HOURS = 48;
@@ -511,6 +511,7 @@
     }
 
     function applyAgeFilter() {
+      refreshSimilarPostedFlags();
       const seenIds = new Set();
       const valid = state.rawItems.filter(function (item) {
         if (!(item.title || item.url)) return false;
@@ -783,14 +784,25 @@
       });
       state.posted = next;
       saveLocalPosted();
+      refreshSimilarPostedFlags();
       updateViewButtons();
       renderFeed();
     }
 
     async function setPosted(item, posted) {
+      // 同じニュース(類似タイトル)のカードにも同じチェックを連動させる。
+      // 優先ボックスと下段で言い換え記事が別カードになっていても一度で済む。
+      const targets = [item];
+      state.rawItems.forEach(function (other) {
+        if (other !== item && other.id !== item.id && isSimilarNews(item, other)) targets.push(other);
+      });
       // 新旧両方のIDを一緒に更新する。旧IDを消さないと、
       // 過去に旧IDで付けたチェックを外しても同期で復活してしまう。
-      const ids = [item.id, item.legacyId].filter(Boolean);
+      const idSet = new Set();
+      targets.forEach(function (target) {
+        [target.id, target.legacyId].forEach(function (id) { if (id) idSet.add(id); });
+      });
+      const ids = Array.from(idSet);
       // 先にローカルへ反映(体感を速く)し、確定まではpendingで保護
       ids.forEach(function (id) {
         pendingOps.set(id, posted);
@@ -798,6 +810,7 @@
         else state.posted.delete(id);
       });
       saveLocalPosted();
+      refreshSimilarPostedFlags();
       updateViewButtons();
       renderFeed();
       try {
@@ -817,6 +830,7 @@
       pendingOps.clear();
       state.posted.clear();
       saveLocalPosted();
+      refreshSimilarPostedFlags();
       updateViewButtons();
       renderFeed();
       try {
@@ -892,7 +906,7 @@
     function stableId(item) {
       const basis = item.form
         ? "F|" + String(item.url || item.title || "")
-        : "N|" + normalizeSignature(item.title);
+        : "N|" + normalizeSignatureV2(item.title);
       return "u" + fnvHash(basis);
     }
 
@@ -915,7 +929,7 @@
     }
 
     function isPosted(item) {
-      return state.posted.has(item.id) || (item.legacyId && state.posted.has(item.legacyId));
+      return isDirectlyPosted(item) || Boolean(item.similarPosted);
     }
 
     function normalizeSignature(text) {
@@ -925,6 +939,83 @@
         .replace(/\s+-\s+[^-|]+$/g, "")
         .replace(/[\s　]+/g, " ")
         .trim();
+    }
+
+    // 新IDの基礎になる正規化(V2)。"IonQ (IONQ) Launches..." と "IonQ Launches..." の
+    // ようなティッカー括弧だけの差を吸収する。legacyStableIdは旧normalizeSignatureのまま
+    // にすること(過去チェックの引き継ぎ用なので変えてはいけない)。
+    function normalizeSignatureV2(text) {
+      return String(text || "")
+        .toLowerCase()
+        .replace(/https?:\/\/\S+/g, "")
+        .replace(/\s+-\s+[^-|]+$/g, "")
+        .replace(/\((?:nyse|nasdaq|otcmkts|otc|asx)?[:\s]*[a-z]{1,6}\)/g, " ")
+        .replace(/[\s　]+/g, " ")
+        .trim();
+    }
+
+    // ============================================================
+    // 類似記事の同一視: 同じニュースを別メディアが言い換えた記事は
+    // 別IDになるため、「銘柄の組み合わせが同一 かつ タイトル語彙が半分以上共通」
+    // なら同じニュースとみなして投稿済みを連動させる。
+    // 銘柄ガードがあるので「Rigetti版とIonQ版の定型記事」は混ざらない。
+    // ============================================================
+    const TITLE_STOPWORDS = new Set(["the", "a", "an", "of", "to", "in", "on", "for", "and", "or", "is", "are", "as", "at", "its", "with", "by", "from"]);
+    const TICKER_PATTERNS = [
+      ["ionq", /ionq/],
+      ["rgti", /rigetti|rgti/],
+      ["qbts", /d-wave|dwave|qbts/],
+      ["qubt", /qubt|quantum computing inc/],
+      ["skyt", /skywater|skyt/],
+      ["quantinuum", /quantinuum/],
+      ["ibm", /ibm/],
+      ["googl", /google|alphabet/],
+      ["msft", /microsoft/],
+      ["amzn", /amazon|aws/],
+      ["nvda", /nvidia|nvda/],
+      ["hon", /honeywell/],
+      ["archer", /archer/]
+    ];
+
+    function tickerKey(title) {
+      const text = String(title || "").toLowerCase();
+      return TICKER_PATTERNS.filter(function (p) { return p[1].test(text); }).map(function (p) { return p[0]; }).join(",");
+    }
+
+    function titleTokens(title) {
+      const text = normalizeSignatureV2(title).replace(/[^a-z0-9$%.\s]/g, " ");
+      const set = new Set();
+      text.split(/\s+/).forEach(function (word) {
+        if (word && word.length > 1 && !TITLE_STOPWORDS.has(word)) set.add(word);
+      });
+      return set;
+    }
+
+    function isSimilarNews(a, b) {
+      if (a.form || b.form) return false;
+      if (tickerKey(a.title) !== tickerKey(b.title)) return false;
+      const A = titleTokens(a.title);
+      const B = titleTokens(b.title);
+      if (A.size < 3 || B.size < 3) return false;
+      let inter = 0;
+      A.forEach(function (word) { if (B.has(word)) inter += 1; });
+      return inter / (A.size + B.size - inter) >= 0.5;
+    }
+
+    function isDirectlyPosted(item) {
+      return state.posted.has(item.id) || (item.legacyId && state.posted.has(item.legacyId));
+    }
+
+    // 投稿済みチェックの状態が変わるたびに呼び、
+    // 「投稿済みの記事と類似する未チェック記事」へフラグを伝播する。
+    // 後から届いた言い換え記事も、既存チェックを引き継いで投稿済み表示になる。
+    function refreshSimilarPostedFlags() {
+      const postedNews = state.rawItems.filter(function (item) { return !item.form && isDirectlyPosted(item); });
+      state.rawItems.forEach(function (item) {
+        item.similarPosted = false;
+        if (item.form || isDirectlyPosted(item)) return;
+        item.similarPosted = postedNews.some(function (posted) { return isSimilarNews(item, posted); });
+      });
     }
 
     function isFreshItem(item) {
