@@ -329,7 +329,7 @@
         <p>48時間以内の情報収集と投稿元ネタ管理</p>
       </div>
       <div class="status-box">
-        <div id="version">version: fast-wire-ja3-20260702</div>
+        <div id="version">version: fast-wire-ja4-20260702</div>
         <div id="updated">updated: --</div>
         <div id="endpoint">source: --</div>
         <div id="summary">summary: --</div>
@@ -385,7 +385,7 @@
   </main>
 
   <script>
-    const APP_VERSION = "fast-wire-ja3-20260702";
+    const APP_VERSION = "fast-wire-ja4-20260702";
     const PUBLIC_ORIGIN = "https://ionqwatchdesk.netlify.app";
     const GPTS_URL = "https://chatgpt.com/g/g-6a41a5264e6081918db223a3b8a4d808-liang-zi-rehoto";
     const DEFAULT_MAX_AGE_HOURS = 48;
@@ -749,12 +749,13 @@
     }
 
     // ============================================================
-    // 投稿済み同期: サーバー(Blobs)を唯一の正とする。
-    // 以前は「サーバー分をローカルに足すだけ」だったため、
-    // 別端末のlocalStorageに残った古いチェックが永遠に復活して見えた。
-    // 現在は取得のたびにサーバーの状態でローカルを丸ごと置き換える。
-    // ローカル保存は通信失敗時の表示継続用の控えでしかない。
+    // 投稿済み同期: サーバー(Blobs・IDごとの個別キー)を唯一の正とする。
+    // pendingOps = まだサーバー反映が確定していないローカル操作。
+    // 定期同期がサーバー状態で置き換える際も、pending分は上書きしない。
+    // これで「操作した直後に同期が走って元に戻る」チラつきを防ぐ。
     // ============================================================
+    const pendingOps = new Map(); // id -> 望みの状態(true/false)
+
     async function loadPostedFromServer() {
       try {
         const data = await fetchJson(postedEndpoint, 8000);
@@ -767,14 +768,21 @@
     }
 
     function replacePosted(ids) {
-      state.posted = new Set(ids.map(String));
+      const next = new Set(ids.map(String));
+      // 飛行中の操作はサーバーより新しい意思なので優先する
+      pendingOps.forEach(function (want, id) {
+        if (want) next.add(id);
+        else next.delete(id);
+      });
+      state.posted = next;
       saveLocalPosted();
       updateViewButtons();
       renderFeed();
     }
 
     async function setPosted(id, posted) {
-      // 先にローカルへ反映(体感を速く)
+      // 先にローカルへ反映(体感を速く)し、確定まではpendingで保護
+      pendingOps.set(id, posted);
       if (posted) state.posted.add(id);
       else state.posted.delete(id);
       saveLocalPosted();
@@ -786,16 +794,15 @@
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ id: id, posted: posted })
         });
-        const data = await response.json();
-        // サーバーが返した確定状態で上書き(他端末の変更もここで取り込まれる)
-        if (data.ok && Array.isArray(data.ids)) replacePosted(data.ids);
+        if (response.ok) pendingOps.delete(id);
       } catch (error) {
-        // Keep local state.
+        // 失敗時はpendingに残し、次の同期でも意思を優先し続ける
       }
     }
 
     async function clearPosted() {
       if (!confirm("投稿済みチェックを全端末で全消去します。よろしいですか？")) return;
+      pendingOps.clear();
       state.posted.clear();
       saveLocalPosted();
       updateViewButtons();
