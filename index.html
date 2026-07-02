@@ -329,7 +329,7 @@
         <p>48時間以内の情報収集と投稿元ネタ管理</p>
       </div>
       <div class="status-box">
-        <div id="version">version: fast-wire-ja4-20260702</div>
+        <div id="version">version: unified-id-20260702</div>
         <div id="updated">updated: --</div>
         <div id="endpoint">source: --</div>
         <div id="summary">summary: --</div>
@@ -385,7 +385,7 @@
   </main>
 
   <script>
-    const APP_VERSION = "fast-wire-ja4-20260702";
+    const APP_VERSION = "unified-id-20260702";
     const PUBLIC_ORIGIN = "https://ionqwatchdesk.netlify.app";
     const GPTS_URL = "https://chatgpt.com/g/g-6a41a5264e6081918db223a3b8a4d808-liang-zi-rehoto";
     const DEFAULT_MAX_AGE_HOURS = 48;
@@ -511,7 +511,13 @@
     }
 
     function applyAgeFilter() {
-      const valid = state.rawItems.filter(function (item) { return item.title || item.url; });
+      const seenIds = new Set();
+      const valid = state.rawItems.filter(function (item) {
+        if (!(item.title || item.url)) return false;
+        if (item.id && seenIds.has(item.id)) return false;
+        if (item.id) seenIds.add(item.id);
+        return true;
+      });
       const fresh = valid.filter(isFreshItem);
       state.items = fresh.sort(function (a, b) {
         return Date.parse(b.publishedAt || b.acceptedAt || 0) - Date.parse(a.publishedAt || a.acceptedAt || 0);
@@ -526,7 +532,8 @@
         const publishedAt = raw.publishedAt || raw.acceptedAt || raw.filingDate || raw.reportDate || "";
         const url = raw.url || "";
         rows.push(Object.assign({}, raw, {
-          id: stableId({ type: type, form: raw.form, url: url, title: title }),
+          id: stableId({ form: raw.form, url: url, title: title }),
+          legacyId: legacyStableId({ type: type, form: raw.form, url: url, title: title }),
           category: category,
           label: label,
           type: type,
@@ -549,7 +556,7 @@
     }
 
     function countPosted() {
-      return state.items.filter(function (item) { return state.posted.has(item.id); }).length;
+      return state.items.filter(function (item) { return isPosted(item); }).length;
     }
 
     function buildStats(valid, fresh) {
@@ -590,7 +597,7 @@
     function renderFeed() {
       const items = filteredItems();
       const priorityItems = state.items
-        .filter(function (item) { return isMarketMovingCandidate(item) && !state.posted.has(item.id); })
+        .filter(function (item) { return isMarketMovingCandidate(item) && !isPosted(item); })
         .slice(0, 5);
 
       el.feed.innerHTML = "";
@@ -625,7 +632,7 @@
 
     function appendItemCard(parent, item, priority) {
       const card = document.createElement("article");
-      const done = state.posted.has(item.id);
+      const done = isPosted(item);
       card.className = "item" + (priority ? " priority" : "") + (item.id === state.selectedId ? " active" : "") + (done ? " done" : "");
       card.innerHTML = [
         "<div class=\"item-title\">" + escapeHtml(displayTitle(item)) + "</div>",
@@ -639,7 +646,7 @@
         "<span>" + escapeHtml(formatTime(item.publishedAt)) + "</span>",
         "</div>",
         "<div class=\"item-actions\">",
-        "<label class=\"posted\"><input type=\"checkbox\" " + (state.posted.has(item.id) ? "checked" : "") + ">投稿済み</label>",
+        "<label class=\"posted\"><input type=\"checkbox\" " + (done ? "checked" : "") + ">投稿済み</label>",
         "<div class=\"row\"><button type=\"button\" data-act=\"open-gpts\" class=\"primary\">GPTs\u3092\u958b\u304f</button><button type=\"button\" data-act=\"select\">\u9078\u629e</button></div>",
         "</div>"
       ].join("");
@@ -650,7 +657,7 @@
         copyAndOpenGpts();
       });
       card.querySelector("input").addEventListener("change", function (event) {
-        setPosted(item.id, event.target.checked);
+        setPosted(item, event.target.checked);
       });
       card.addEventListener("dblclick", function () { selectItem(item.id); });
       parent.appendChild(card);
@@ -658,7 +665,7 @@
 
     function filteredItems() {
       return state.items.filter(function (item) {
-        if (state.view === "posted" && !state.posted.has(item.id)) return false;
+        if (state.view === "posted" && !isPosted(item)) return false;
         if (!state.query) return true;
         return [item.title, item.titleJa, item.source, item.label, item.form, item.ticker].join(" ").toLowerCase().includes(state.query);
       });
@@ -780,11 +787,16 @@
       renderFeed();
     }
 
-    async function setPosted(id, posted) {
+    async function setPosted(item, posted) {
+      // 新旧両方のIDを一緒に更新する。旧IDを消さないと、
+      // 過去に旧IDで付けたチェックを外しても同期で復活してしまう。
+      const ids = [item.id, item.legacyId].filter(Boolean);
       // 先にローカルへ反映(体感を速く)し、確定まではpendingで保護
-      pendingOps.set(id, posted);
-      if (posted) state.posted.add(id);
-      else state.posted.delete(id);
+      ids.forEach(function (id) {
+        pendingOps.set(id, posted);
+        if (posted) state.posted.add(id);
+        else state.posted.delete(id);
+      });
       saveLocalPosted();
       updateViewButtons();
       renderFeed();
@@ -792,9 +804,9 @@
         const response = await fetch(postedEndpoint, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ id: id, posted: posted })
+          body: JSON.stringify({ ids: ids, posted: posted })
         });
-        if (response.ok) pendingOps.delete(id);
+        if (response.ok) ids.forEach(function (id) { pendingOps.delete(id); });
       } catch (error) {
         // 失敗時はpendingに残し、次の同期でも意思を優先し続ける
       }
@@ -874,17 +886,36 @@
     // ============================================================
     // 統一ID: watch-ionq.js / latest-ionq.js のstableIdと完全に同じロジック。
     // 片方を変えるときは必ず3ファイル同時に変えること。
+    // typeをIDに含めない: 同じ記事が別カテゴリ(NEWS/QNEWS/IR/CNEWS)で
+    // 取れても同一IDになり、投稿済みチェックがカテゴリをまたいで効く。
     // ============================================================
     function stableId(item) {
       const basis = item.form
+        ? "F|" + String(item.url || item.title || "")
+        : "N|" + normalizeSignature(item.title);
+      return "u" + fnvHash(basis);
+    }
+
+    // 旧ID(type込み)。サーバーに残っている過去の投稿済みチェックを
+    // 引き継ぐためだけに残す。新規チェックは新IDで保存される。
+    function legacyStableId(item) {
+      const basis = item.form
         ? String(item.type || "") + "|" + String(item.url || item.title || "")
         : String(item.type || "") + "|" + normalizeSignature(item.title);
+      return "n" + fnvHash(basis);
+    }
+
+    function fnvHash(basis) {
       let hash = 2166136261;
       for (let i = 0; i < basis.length; i += 1) {
         hash ^= basis.charCodeAt(i);
         hash = Math.imul(hash, 16777619);
       }
-      return "n" + (hash >>> 0).toString(16);
+      return (hash >>> 0).toString(16);
+    }
+
+    function isPosted(item) {
+      return state.posted.has(item.id) || (item.legacyId && state.posted.has(item.legacyId));
     }
 
     function normalizeSignature(text) {

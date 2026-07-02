@@ -213,20 +213,33 @@ function isImportantSec(item) {
 }
 
 // 統一ID: watch-ionq.js / index.html と完全に同じロジック。変更時は3ファイル同時に。
+// typeはIDに含めない(同じ記事がカテゴリ違いで別IDになるのを防ぐ)。
+// legacyIdは旧type込みIDで、過去の投稿済みチェック引き継ぎ用。
 function withId(item) {
-  return { ...item, id: stableId(item) };
+  return { ...item, id: stableId(item), legacyId: legacyStableId(item) };
 }
 
 function stableId(item) {
   const basis = item.form
+    ? `F|${item.url || item.title || ""}`
+    : `N|${normalizeSignature(item.title)}`;
+  return "u" + fnvHash(basis);
+}
+
+function legacyStableId(item) {
+  const basis = item.form
     ? `${item.type}|${item.url || item.title || ""}`
     : `${item.type}|${normalizeSignature(item.title)}`;
+  return "n" + fnvHash(basis);
+}
+
+function fnvHash(basis) {
   let hash = 2166136261;
   for (let i = 0; i < basis.length; i += 1) {
     hash ^= basis.charCodeAt(i);
     hash = Math.imul(hash, 16777619);
   }
-  return "n" + (hash >>> 0).toString(16);
+  return (hash >>> 0).toString(16);
 }
 
 function normalizeSignature(text) {

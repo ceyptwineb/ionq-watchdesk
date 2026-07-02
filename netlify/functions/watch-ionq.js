@@ -132,9 +132,9 @@ exports.handler = async (event = {}, context = {}) => {
     }
 
     const fresh = items.filter((item) =>
-      !postedIds.has(item.id) &&
-      !notifiedIds.has(item.id) &&
-      !knownIds.has(item.id) &&
+      !idInSet(item, postedIds) &&
+      !idInSet(item, notifiedIds) &&
+      !idInSet(item, knownIds) &&
       !isLowSignalSec(item) &&
       shouldNotifyByTime(item, startedAt)
     );
@@ -489,25 +489,43 @@ function normalizeLatestItems(data) {
 }
 
 // ============================================================
-// 統一ID: フロント(index.html)のstableIdと完全に同じロジック。
-// 片方を変えるときは必ず両方変えること。
+// 統一ID: フロント(index.html) / latest-ionq.js のstableIdと完全に同じロジック。
+// 片方を変えるときは必ず3ファイル同時に変えること。
 // SEC等の提出書類はURL(accession込み)が安定しているのでURLを使い、
 // ニュースはURLがトラッキングで揺れるため正規化タイトルを使う。
+// typeはIDに含めない: 同じ記事が別カテゴリ(NEWS/QNEWS/IR/CNEWS)で
+// 取れても同一IDになり、重複表示・再通知・チェック復活を防ぐ。
+// legacyId(旧type込みID)は過去の投稿済み/通知済み状態の引き継ぎ用。
 // ============================================================
 function withId(item) {
-  return { ...item, id: stableId(item) };
+  return { ...item, id: stableId(item), legacyId: legacyStableId(item) };
 }
 
 function stableId(item) {
   const basis = item.form
+    ? `F|${item.url || item.title || ""}`
+    : `N|${normalizeSignature(item.title)}`;
+  return "u" + fnvHash(basis);
+}
+
+function legacyStableId(item) {
+  const basis = item.form
     ? `${item.type}|${item.url || item.title || ""}`
     : `${item.type}|${normalizeSignature(item.title)}`;
+  return "n" + fnvHash(basis);
+}
+
+function fnvHash(basis) {
   let hash = 2166136261;
   for (let i = 0; i < basis.length; i += 1) {
     hash ^= basis.charCodeAt(i);
     hash = Math.imul(hash, 16777619);
   }
-  return "n" + (hash >>> 0).toString(16);
+  return (hash >>> 0).toString(16);
+}
+
+function idInSet(item, set) {
+  return set.has(item.id) || (item.legacyId && set.has(item.legacyId));
 }
 
 function normalizeSignature(text) {
@@ -738,9 +756,9 @@ function shouldNotifyByTime(item, nowValue) {
 }
 
 function notificationReason(item, nowValue, postedIds, notifiedIds, knownIds = new Set()) {
-  if (postedIds.has(item.id)) return "posted";
-  if (notifiedIds.has(item.id)) return "already_notified";
-  if (knownIds.has(item.id)) return "already_known";
+  if (idInSet(item, postedIds)) return "posted";
+  if (idInSet(item, notifiedIds)) return "already_notified";
+  if (idInSet(item, knownIds)) return "already_known";
   if (isLowSignalSec(item)) return "low_signal_sec";
   const itemTime = parseItemTime(item);
   if (!itemTime) return "no_valid_time";
@@ -917,15 +935,40 @@ async function readState() {
   }
 }
 
+// 投稿済みIDの読み込み。posted.jsと同じ格納方式:
+// - 旧形式: posted-state キーに {ids:[...]} をまとめて保存
+// - 新形式: posted/1/<id>(チェック) と posted/0/<id>(チェック外し)の個別キー
+// 個別キー方式は「全件読んで全件書き戻す」際の取りこぼし(チェック復活)を防ぐ。
 async function readPostedIds() {
   try {
     const store = await openStore();
-    const value = await store.get(POSTED_KEY);
-    if (!value) return [];
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed.ids) ? parsed.ids : [];
+    const ids = new Set();
+    try {
+      const value = await store.get(POSTED_KEY);
+      if (value) {
+        const parsed = JSON.parse(value);
+        (Array.isArray(parsed.ids) ? parsed.ids : []).forEach((id) => ids.add(String(id)));
+      }
+    } catch (error) {
+      console.warn("Could not read legacy posted state.", error.message);
+    }
+    const checked = await listKeys(store, "posted/1/");
+    const unchecked = await listKeys(store, "posted/0/");
+    unchecked.forEach((id) => ids.delete(id));
+    checked.forEach((id) => ids.add(id));
+    return [...ids];
   } catch (error) {
     console.warn("Could not read posted state.", error.message);
+    return [];
+  }
+}
+
+async function listKeys(store, prefix) {
+  try {
+    const result = await store.list({ prefix });
+    return (result && result.blobs ? result.blobs : []).map((blob) => String(blob.key).slice(prefix.length));
+  } catch (error) {
+    console.warn(`Could not list ${prefix} keys.`, error.message);
     return [];
   }
 }
