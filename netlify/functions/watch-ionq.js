@@ -69,6 +69,9 @@ exports.handler = async (event = {}, context = {}) => {
     const collected = await collectLatest();
     let items = normalizeLatestItems(collected);
 
+    // 上書き前に前回キャッシュを確保(類似記事の再通知抑制に使う)
+    const previousItems = await readCacheItems();
+
     // 翻訳前に一度キャッシュを書く(翻訳中にタイムアウトしても表示は生きる)
     await writeCache({ updatedAt: startedAt, cachedAt: startedAt, items, sourceStats: collected.stats });
 
@@ -139,18 +142,34 @@ exports.handler = async (event = {}, context = {}) => {
       shouldNotifyByTime(item, startedAt)
     );
 
-    if (!fresh.length) {
+    // 転載・言い換え記事の通知抑制:
+    // 1. 既知(通知済み/投稿済み/既出)の記事とタイトルが類似する新着は通知しない
+    // 2. 同一バッチ内の類似記事は1件に代表させる
+    buildSimilarityIndex(items.concat(previousItems));
+    const seenItems = previousItems.filter((p) => !p.form &&
+      (idInSet(p, knownIds) || idInSet(p, notifiedIds) || idInSet(p, postedIds)));
+    const notifyList = [];
+    fresh.forEach((item) => {
+      if (item.form ? false : seenItems.some((p) => isSimilarNews(item, p))) return;
+      if (notifyList.some((n) => isSimilarNews(n, item))) return;
+      notifyList.push(item);
+    });
+
+    if (!notifyList.length) {
+      fresh.forEach((entry) => notifiedIds.add(entry.id));
       await writeState({
         ...state,
+        notifiedIds: [...notifiedIds].slice(-500),
         knownIds: mergeRecentIds(knownIds, currentIds),
         lastCheckedAt: startedAt,
-        lastResult: "no_new_items"
+        lastResult: fresh.length ? "suppressed_similar" : "no_new_items"
       });
-      return json(200, { ok: true, result: "no_new_items", totalItems: items.length });
+      return json(200, { ok: true, result: fresh.length ? "suppressed_similar" : "no_new_items", totalItems: items.length });
     }
 
-    await sendNotification(fresh.slice(0, MAX_NOTIFY_EMBEDS), { totalCount: fresh.length });
+    await sendNotification(notifyList.slice(0, MAX_NOTIFY_EMBEDS), { totalCount: notifyList.length });
 
+    // 抑制した類似分も通知済み扱いにして、以後の再浮上を防ぐ
     fresh.forEach((entry) => notifiedIds.add(entry.id));
     await writeState({
       ...state,
@@ -541,6 +560,114 @@ function idInSet(item, set) {
   return set.has(item.id) || (item.legacyId && set.has(item.legacyId));
 }
 
+// ============================================================
+// 類似記事の同一視: index.html と同じロジック。変更時は両方同時に。
+// 「銘柄構成が同一 + アンカー(全大文字固有名詞/数値)が1つ以上共通 +
+//  重み付きタイトル類似度 >= 0.22 (または素の語彙一致率 >= 0.5)」
+// で同じニュースの言い換え転載とみなし、Discord再通知を抑制する。
+// ============================================================
+const TITLE_STOPWORDS = new Set(["the", "a", "an", "of", "to", "in", "on", "for", "and", "or", "is", "are", "as", "at", "its", "with", "by", "from"]);
+const TICKER_PATTERNS = [
+  ["ionq", /\bionq\b/],
+  ["rgti", /\brigetti\b|\brgti\b/],
+  ["qbts", /\bd-wave\b|\bdwave\b|\bqbts\b/],
+  ["qubt", /\bqubt\b|\bquantum computing inc\b/],
+  ["skyt", /\bskywater\b|\bskyt\b/],
+  ["quantinuum", /\bquantinuum\b/],
+  ["ibm", /\bibm\b/],
+  ["googl", /\bgoogle\b|\balphabet\b/],
+  ["msft", /\bmicrosoft\b/],
+  ["amzn", /\bamazon\b|\baws\b/],
+  ["nvda", /\bnvidia\b|\bnvda\b/],
+  ["hon", /\bhoneywell\b/],
+  ["archer", /\barcher\b/]
+];
+
+function tickerKey(title) {
+  const text = normalizeSignatureV2(title);
+  return TICKER_PATTERNS.filter((p) => p[1].test(text)).map((p) => p[0]).join(",");
+}
+
+function titleTokens(title) {
+  const text = normalizeSignatureV2(title)
+    .replace(/\$\s*(\d[\d,.]*)\s*(million|billion|m\b|b\b)?/g, (s, n, u) => " " + n.replace(/,/g, "") + (u ? u[0] : "") + " ")
+    .replace(/(\d[\d,.]*)\s*(million|billion)/g, (s, n, u) => " " + n.replace(/,/g, "") + u[0] + " ")
+    .replace(/[^a-z0-9\s%.]/g, " ");
+  const set = new Set();
+  text.split(/\s+/).forEach((word) => {
+    if (word && word.length > 1 && !TITLE_STOPWORDS.has(word)) set.add(word);
+  });
+  return set;
+}
+
+function anchorTokens(title, tokens) {
+  const set = new Set();
+  String(title || "").replace(/\s+-\s+[^-|]+$/, "").split(/[^A-Za-z0-9$%.,-]+/).forEach((word) => {
+    const w = word.replace(/[.,]+$/, "");
+    if (/[A-Z]{2}/.test(w) && /^[A-Z0-9$%.-]+$/.test(w) && w.length > 1) set.add(w.toLowerCase());
+  });
+  tokens.forEach((word) => { if (/\d/.test(word)) set.add(word); });
+  return set;
+}
+
+const simIndex = { df: new Map(), toks: new Map(), anchors: new Map() };
+
+function buildSimilarityIndex(list) {
+  simIndex.df = new Map();
+  simIndex.toks = new Map();
+  simIndex.anchors = new Map();
+  list.forEach((item) => {
+    if (item.form) return;
+    const T = titleTokens(item.title);
+    simIndex.toks.set(item, T);
+    simIndex.anchors.set(item, anchorTokens(item.title, T));
+    T.forEach((word) => simIndex.df.set(word, (simIndex.df.get(word) || 0) + 1));
+  });
+}
+
+function tokenWeight(word) {
+  return 1 / Math.max(1, simIndex.df.get(word) || 1);
+}
+
+function itemTokens(item) {
+  let T = simIndex.toks.get(item);
+  if (!T) { T = titleTokens(item.title); simIndex.toks.set(item, T); }
+  return T;
+}
+
+function itemAnchors(item) {
+  let A = simIndex.anchors.get(item);
+  if (!A) { A = anchorTokens(item.title, itemTokens(item)); simIndex.anchors.set(item, A); }
+  return A;
+}
+
+function isSimilarNews(a, b) {
+  if (a.form || b.form) return false;
+  if (tickerKey(a.title) !== tickerKey(b.title)) return false;
+  const anchorsA = itemAnchors(a);
+  const anchorsB = itemAnchors(b);
+  if (anchorsA.size && anchorsB.size) {
+    let shared = false;
+    anchorsA.forEach((word) => { if (anchorsB.has(word)) shared = true; });
+    if (!shared) return false;
+  }
+  const A = itemTokens(a);
+  const B = itemTokens(b);
+  if (A.size < 3 || B.size < 3) return false;
+  let inter = 0;
+  let wInter = 0;
+  let wUnion = 0;
+  A.forEach((word) => {
+    const g = tokenWeight(word);
+    wUnion += g;
+    if (B.has(word)) { inter += 1; wInter += g; }
+  });
+  B.forEach((word) => { if (!A.has(word)) wUnion += tokenWeight(word); });
+  const jac = inter / (A.size + B.size - inter);
+  const wjac = wUnion ? wInter / wUnion : 0;
+  return wjac >= 0.22 || jac >= 0.5;
+}
+
 function normalizeSignature(text) {
   return String(text || "")
     .toLowerCase()
@@ -926,6 +1053,19 @@ async function openStore() {
     opts.token = token;
   }
   return getStore(opts);
+}
+
+async function readCacheItems() {
+  try {
+    const store = await openStore();
+    const value = await store.get(CACHE_KEY);
+    if (!value) return [];
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed.items) ? parsed.items : [];
+  } catch (error) {
+    console.warn("Could not read previous cache.", error.message);
+    return [];
+  }
 }
 
 async function writeCache(payload) {

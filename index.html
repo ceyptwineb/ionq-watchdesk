@@ -329,7 +329,7 @@
         <p>48時間以内の情報収集と投稿元ネタ管理</p>
       </div>
       <div class="status-box">
-        <div id="version">version: mark-all-20260702</div>
+        <div id="version">version: dedupe-group-20260703</div>
         <div id="updated">updated: --</div>
         <div id="endpoint">source: --</div>
         <div id="summary">summary: --</div>
@@ -386,7 +386,7 @@
   </main>
 
   <script>
-    const APP_VERSION = "mark-all-20260702";
+    const APP_VERSION = "dedupe-group-20260703";
     const PUBLIC_ORIGIN = "https://ionqwatchdesk.netlify.app";
     const GPTS_URL = "https://chatgpt.com/g/g-6a41a5264e6081918db223a3b8a4d808-liang-zi-rehoto";
     const DEFAULT_MAX_AGE_HOURS = 48;
@@ -514,6 +514,7 @@
     }
 
     function applyAgeFilter() {
+      rebuildSimilarityIndex();
       refreshSimilarPostedFlags();
       const seenIds = new Set();
       const valid = state.rawItems.filter(function (item) {
@@ -522,11 +523,48 @@
         if (item.id) seenIds.add(item.id);
         return true;
       });
-      const fresh = valid.filter(isFreshItem);
-      state.items = fresh.sort(function (a, b) {
+      const fresh = valid.filter(isFreshItem).sort(function (a, b) {
         return Date.parse(b.publishedAt || b.acceptedAt || 0) - Date.parse(a.publishedAt || a.acceptedAt || 0);
       });
+      state.items = groupSimilarItems(fresh);
       renderSummary(buildStats(valid, fresh));
+    }
+
+    // 同じニュースの言い換え転載を1枚のカードにまとめる。
+    // 代表 = 最新の1件。残りはgroupItemsに保持し、チェックは全員に連動する。
+    function groupSimilarItems(items) {
+      const parent = items.map(function (_, i) { return i; });
+      function find(x) {
+        while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; }
+        return x;
+      }
+      for (let i = 0; i < items.length; i += 1) {
+        if (items[i].form) continue;
+        for (let j = i + 1; j < items.length; j += 1) {
+          if (items[j].form) continue;
+          if (find(i) === find(j)) continue;
+          if (isSimilarNews(items[i], items[j])) parent[find(j)] = find(i);
+        }
+      }
+      const groups = new Map();
+      const reps = [];
+      items.forEach(function (item, i) {
+        const root = find(i);
+        if (!groups.has(root)) {
+          groups.set(root, item);
+          item.groupItems = [item];
+          reps.push(item);
+        } else {
+          groups.get(root).groupItems.push(item);
+        }
+      });
+      return reps;
+    }
+
+    function groupSources(item) {
+      const list = (item.groupItems || [item]).map(function (m) { return m.source; }).filter(Boolean);
+      const uniq = Array.from(new Set(list));
+      return uniq.slice(0, 3).join(" / ") + (uniq.length > 3 ? " 他" : "");
     }
 
     function addRows(rows, list, category, label, type) {
@@ -643,10 +681,11 @@
         item.titleJa ? "<div class=\"item-title-original\">" + escapeHtml(item.title) + "</div>" : "",
         "<div class=\"meta\">",
         "<span class=\"badge\">" + escapeHtml(item.label) + "</span>",
+        (item.groupItems && item.groupItems.length > 1 ? "<span class=\"badge\">同ニュース×" + item.groupItems.length + "</span>" : ""),
         (isUntranslated(item) ? "<span class=\"badge\">翻訳待ち</span>" : ""),
         renderSignalBadges(item),
         item.form ? "<span class=\"badge\">" + escapeHtml(item.form) + "</span>" : "",
-        "<span>" + escapeHtml(item.source || "") + "</span>",
+        "<span>" + escapeHtml(groupSources(item)) + "</span>",
         "<span>" + escapeHtml(formatTime(item.publishedAt)) + "</span>",
         "</div>",
         "<div class=\"item-actions\">",
@@ -684,9 +723,10 @@
         item.titleJa ? "<div class=\"item-title-original\">" + escapeHtml(item.title) + "</div>" : "",
         "<div class=\"meta\">",
         "<span class=\"badge\">" + escapeHtml(item.label) + "</span>",
+        (item.groupItems && item.groupItems.length > 1 ? "<span class=\"badge\">同ニュース×" + item.groupItems.length + "</span>" : ""),
         renderSignalBadges(item),
         item.form ? "<span class=\"badge\">" + escapeHtml(item.form) + "</span>" : "",
-        "<span>" + escapeHtml(item.source || "") + "</span>",
+        "<span>" + escapeHtml(groupSources(item)) + "</span>",
         "<span>" + escapeHtml(formatTime(item.publishedAt)) + "</span>",
         "</div>",
         item.url ? "<div class=\"url-box\">" + escapeHtml(item.url) + "</div>" : "<div class=\"warn\">URLなし</div>"
@@ -823,11 +863,10 @@
     }
 
     async function setPosted(item, posted) {
-      // 同じニュース(類似タイトル)のカードにも同じチェックを連動させる。
-      // 優先ボックスと下段で言い換え記事が別カードになっていても一度で済む。
-      const targets = [item];
+      // グループ全員 + rawItems内の類似記事(48h外や後着分)にも同じチェックを連動させる。
+      const targets = (item.groupItems || [item]).slice();
       state.rawItems.forEach(function (other) {
-        if (other !== item && other.id !== item.id && isSimilarNews(item, other)) targets.push(other);
+        if (targets.indexOf(other) < 0 && other.id !== item.id && isSimilarNews(item, other)) targets.push(other);
       });
       // 新旧両方のIDを一緒に更新する。旧IDを消さないと、
       // 過去に旧IDで付けたチェックを外しても同期で復活してしまう。
@@ -869,7 +908,9 @@
       if (!confirm("表示中の未チェック " + targets.length + " 件をすべて投稿済みにします。よろしいですか？")) return;
       const idSet = new Set();
       targets.forEach(function (target) {
-        [target.id, target.legacyId].forEach(function (id) { if (id) idSet.add(id); });
+        (target.groupItems || [target]).forEach(function (member) {
+          [member.id, member.legacyId].forEach(function (id) { if (id) idSet.add(id); });
+        });
       });
       const ids = Array.from(idSet);
       ids.forEach(function (id) {
@@ -1003,7 +1044,10 @@
     }
 
     function isPosted(item) {
-      return isDirectlyPosted(item) || Boolean(item.similarPosted);
+      if (isDirectlyPosted(item) || item.similarPosted) return true;
+      return Boolean(item.groupItems) && item.groupItems.some(function (member) {
+        return isDirectlyPosted(member) || member.similarPosted;
+      });
     }
 
     function normalizeSignature(text) {
@@ -1030,34 +1074,42 @@
 
     // ============================================================
     // 類似記事の同一視: 同じニュースを別メディアが言い換えた記事は
-    // 別IDになるため、「銘柄の組み合わせが同一 かつ タイトル語彙が半分以上共通」
-    // なら同じニュースとみなして投稿済みを連動させる。
-    // 銘柄ガードがあるので「Rigetti版とIonQ版の定型記事」は混ざらない。
+    // 別IDになるため、次の条件が全部揃ったら同じニュースとみなす。
+    //   1. 銘柄の組み合わせが同一(単語境界つき判定)
+    //   2. アンカー(全大文字の固有名詞や数値)が両方にあるなら最低1つ共通
+    //   3. 重み付きタイトル類似度 >= 0.22(珍しい単語の一致を重く数える)
+    //      または 素の語彙一致率 >= 0.5
+    // これで「Rigetti版とIonQ版の定型記事」「(WDAY)と(AGYS)の同型見出し」は
+    // 混ざらず、言い換え転載(Qolab調達×4媒体など)は統合される。
+    // watch-ionq.js にも同じロジックあり。変更時は両方同時に。
     // ============================================================
     const TITLE_STOPWORDS = new Set(["the", "a", "an", "of", "to", "in", "on", "for", "and", "or", "is", "are", "as", "at", "its", "with", "by", "from"]);
     const TICKER_PATTERNS = [
-      ["ionq", /ionq/],
-      ["rgti", /rigetti|rgti/],
-      ["qbts", /d-wave|dwave|qbts/],
-      ["qubt", /qubt|quantum computing inc/],
-      ["skyt", /skywater|skyt/],
-      ["quantinuum", /quantinuum/],
-      ["ibm", /ibm/],
-      ["googl", /google|alphabet/],
-      ["msft", /microsoft/],
-      ["amzn", /amazon|aws/],
-      ["nvda", /nvidia|nvda/],
-      ["hon", /honeywell/],
-      ["archer", /archer/]
+      ["ionq", /\bionq\b/],
+      ["rgti", /\brigetti\b|\brgti\b/],
+      ["qbts", /\bd-wave\b|\bdwave\b|\bqbts\b/],
+      ["qubt", /\bqubt\b|\bquantum computing inc\b/],
+      ["skyt", /\bskywater\b|\bskyt\b/],
+      ["quantinuum", /\bquantinuum\b/],
+      ["ibm", /\bibm\b/],
+      ["googl", /\bgoogle\b|\balphabet\b/],
+      ["msft", /\bmicrosoft\b/],
+      ["amzn", /\bamazon\b|\baws\b/],
+      ["nvda", /\bnvidia\b|\bnvda\b/],
+      ["hon", /\bhoneywell\b/],
+      ["archer", /\barcher\b/]
     ];
 
     function tickerKey(title) {
-      const text = String(title || "").toLowerCase();
+      const text = normalizeSignatureV2(title);
       return TICKER_PATTERNS.filter(function (p) { return p[1].test(text); }).map(function (p) { return p[0]; }).join(",");
     }
 
     function titleTokens(title) {
-      const text = normalizeSignatureV2(title).replace(/[^a-z0-9$%.\s]/g, " ");
+      const text = normalizeSignatureV2(title)
+        .replace(/\$\s*(\d[\d,.]*)\s*(million|billion|m\b|b\b)?/g, function (s, n, u) { return " " + n.replace(/,/g, "") + (u ? u[0] : "") + " "; })
+        .replace(/(\d[\d,.]*)\s*(million|billion)/g, function (s, n, u) { return " " + n.replace(/,/g, "") + u[0] + " "; })
+        .replace(/[^a-z0-9\s%.]/g, " ");
       const set = new Set();
       text.split(/\s+/).forEach(function (word) {
         if (word && word.length > 1 && !TITLE_STOPWORDS.has(word)) set.add(word);
@@ -1065,15 +1117,76 @@
       return set;
     }
 
+    // アンカー = 全大文字の固有名詞(NSF, QBTS, ERASE, WDAY等)と数値(54.2m, 9.2%等)。
+    // 「見出しの型は同じで対象が違う」記事を弾くための決め手になる。
+    function anchorTokens(title, tokens) {
+      const set = new Set();
+      String(title || "").replace(/\s+-\s+[^-|]+$/, "").split(/[^A-Za-z0-9$%.,-]+/).forEach(function (word) {
+        const w = word.replace(/[.,]+$/, "");
+        if (/[A-Z]{2}/.test(w) && /^[A-Z0-9$%.-]+$/.test(w) && w.length > 1) set.add(w.toLowerCase());
+      });
+      tokens.forEach(function (word) { if (/\d/.test(word)) set.add(word); });
+      return set;
+    }
+
+    // rawItems更新のたびに再構築する類似度インデックス
+    // (df = 各単語が何記事に出るか。珍しい単語ほど一致の重みが大きい)
+    const simIndex = { df: new Map(), toks: new Map(), anchors: new Map() };
+
+    function rebuildSimilarityIndex() {
+      simIndex.df = new Map();
+      simIndex.toks = new Map();
+      simIndex.anchors = new Map();
+      state.rawItems.forEach(function (item) {
+        if (item.form) return;
+        const T = titleTokens(item.title);
+        simIndex.toks.set(item, T);
+        simIndex.anchors.set(item, anchorTokens(item.title, T));
+        T.forEach(function (word) { simIndex.df.set(word, (simIndex.df.get(word) || 0) + 1); });
+      });
+    }
+
+    function tokenWeight(word) {
+      return 1 / Math.max(1, simIndex.df.get(word) || 1);
+    }
+
+    function itemTokens(item) {
+      let T = simIndex.toks.get(item);
+      if (!T) { T = titleTokens(item.title); simIndex.toks.set(item, T); }
+      return T;
+    }
+
+    function itemAnchors(item) {
+      let A = simIndex.anchors.get(item);
+      if (!A) { A = anchorTokens(item.title, itemTokens(item)); simIndex.anchors.set(item, A); }
+      return A;
+    }
+
     function isSimilarNews(a, b) {
       if (a.form || b.form) return false;
       if (tickerKey(a.title) !== tickerKey(b.title)) return false;
-      const A = titleTokens(a.title);
-      const B = titleTokens(b.title);
+      const anchorsA = itemAnchors(a);
+      const anchorsB = itemAnchors(b);
+      if (anchorsA.size && anchorsB.size) {
+        let shared = false;
+        anchorsA.forEach(function (word) { if (anchorsB.has(word)) shared = true; });
+        if (!shared) return false;
+      }
+      const A = itemTokens(a);
+      const B = itemTokens(b);
       if (A.size < 3 || B.size < 3) return false;
       let inter = 0;
-      A.forEach(function (word) { if (B.has(word)) inter += 1; });
-      return inter / (A.size + B.size - inter) >= 0.5;
+      let wInter = 0;
+      let wUnion = 0;
+      A.forEach(function (word) {
+        const g = tokenWeight(word);
+        wUnion += g;
+        if (B.has(word)) { inter += 1; wInter += g; }
+      });
+      B.forEach(function (word) { if (!A.has(word)) wUnion += tokenWeight(word); });
+      const jac = inter / (A.size + B.size - inter);
+      const wjac = wUnion ? wInter / wUnion : 0;
+      return wjac >= 0.22 || jac >= 0.5;
     }
 
     function isDirectlyPosted(item) {
