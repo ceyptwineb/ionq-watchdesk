@@ -329,7 +329,7 @@
         <p>48時間以内の情報収集と投稿元ネタ管理</p>
       </div>
       <div class="status-box">
-        <div id="version">version: dedupe-group-20260703</div>
+        <div id="version">version: unreadable-filter-20260703</div>
         <div id="updated">updated: --</div>
         <div id="endpoint">source: --</div>
         <div id="summary">summary: --</div>
@@ -337,6 +337,7 @@
       <div class="side-actions">
         <button id="showAll" class="primary">最新ニュースを見る</button>
         <button id="showPosted">投稿済みだけ見る</button>
+        <button id="hideUnreadable">GPTで読めない媒体を隠す</button>
       </div>
     </aside>
 
@@ -371,6 +372,7 @@
             <button id="openGpts">GPTsを開く</button>
             <button id="copyUrl">URLだけコピー</button>
             <button id="openUrl">元記事を開く</button>
+            <button id="blockSource" class="ghost">この媒体は読めなかった</button>
           </div>
           <div id="copyStatus" class="muted">待機中</div>
         </div>
@@ -386,7 +388,7 @@
   </main>
 
   <script>
-    const APP_VERSION = "dedupe-group-20260703";
+    const APP_VERSION = "unreadable-filter-20260703";
     const PUBLIC_ORIGIN = "https://ionqwatchdesk.netlify.app";
     const GPTS_URL = "https://chatgpt.com/g/g-6a41a5264e6081918db223a3b8a4d808-liang-zi-rehoto";
     const DEFAULT_MAX_AGE_HOURS = 48;
@@ -402,7 +404,10 @@
       selectedId: "",
       view: "all",
       query: "",
-      maxAgeHours: DEFAULT_MAX_AGE_HOURS
+      maxAgeHours: DEFAULT_MAX_AGE_HOURS,
+      blockedSources: new Set(),
+      allowedSources: new Set(),
+      hideUnreadable: localStorage.getItem("ionq-hide-unreadable") === "1"
     };
 
     const el = {
@@ -411,6 +416,8 @@
       summary: document.getElementById("summary"),
       showAll: document.getElementById("showAll"),
       showPosted: document.getElementById("showPosted"),
+      hideUnreadable: document.getElementById("hideUnreadable"),
+      blockSource: document.getElementById("blockSource"),
       feed: document.getElementById("feed"),
       search: document.getElementById("search"),
       reload: document.getElementById("reload"),
@@ -453,6 +460,13 @@
       el.openUrl.addEventListener("click", openSelectedUrl);
       el.markAllPosted.addEventListener("click", markAllPosted);
       el.clearPosted.addEventListener("click", clearPosted);
+      el.hideUnreadable.addEventListener("click", function () {
+        state.hideUnreadable = !state.hideUnreadable;
+        localStorage.setItem("ionq-hide-unreadable", state.hideUnreadable ? "1" : "0");
+        updateViewButtons();
+        renderFeed();
+      });
+      el.blockSource.addEventListener("click", toggleBlockedSource);
       [[el.age48, 48], [el.age72, 72], [el.age168, 168]].forEach(function (pair) {
         pair[0].addEventListener("click", function () { setMaxAge(pair[1]); });
       });
@@ -591,6 +605,9 @@
     function updateViewButtons() {
       el.showAll.className = state.view === "all" ? "primary" : "";
       el.showPosted.className = state.view === "posted" ? "primary" : "";
+      el.hideUnreadable.className = state.hideUnreadable ? "primary" : "";
+      const unreadableCount = state.items.filter(itemUnreadable).length;
+      el.hideUnreadable.textContent = (state.hideUnreadable ? "読めない媒体を表示に戻す" : "GPTで読めない媒体を隠す") + " (" + unreadableCount + ")";
       const posted = countPosted();
       const unposted = state.items.length - posted;
       el.showAll.textContent = "最新ニュースを見る (未投稿 " + unposted + ")";
@@ -682,6 +699,7 @@
         "<div class=\"meta\">",
         "<span class=\"badge\">" + escapeHtml(item.label) + "</span>",
         (item.groupItems && item.groupItems.length > 1 ? "<span class=\"badge\">同ニュース×" + item.groupItems.length + "</span>" : ""),
+        (itemUnreadable(item) ? "<span class=\"badge\" style=\"border-color:#d3a64a;color:#9b5a00;\">GPT読取難</span>" : ""),
         (isUntranslated(item) ? "<span class=\"badge\">翻訳待ち</span>" : ""),
         renderSignalBadges(item),
         item.form ? "<span class=\"badge\">" + escapeHtml(item.form) + "</span>" : "",
@@ -709,6 +727,7 @@
     function filteredItems() {
       return state.items.filter(function (item) {
         if (state.view === "posted" && !isPosted(item)) return false;
+        if (state.hideUnreadable && itemUnreadable(item)) return false;
         if (!state.query) return true;
         return [item.title, item.titleJa, item.source, item.label, item.form, item.ticker].join(" ").toLowerCase().includes(state.query);
       });
@@ -733,6 +752,7 @@
       ].join("");
       el.gptsText.value = buildGptsText(item);
       el.copyStatus.textContent = "選択中";
+      updateBlockSourceButton(item);
       renderFeed();
     }
 
@@ -751,7 +771,8 @@
         item.url || "",
         "title: " + (item.title || ""),
         "source: " + (item.source || ""),
-        "type: " + (item.label || item.type || "")
+        "type: " + (item.label || item.type || ""),
+        "補足: URLがBOT対策などで開けない場合は、タイトルと出典でWeb検索して本文を確認してから書くこと。"
       ].filter(Boolean).join("\n");
     }
 
@@ -811,6 +832,10 @@
       await flushPendingOps();
       try {
         const data = await fetchJson(postedEndpoint, 8000);
+        if (data.ok && Array.isArray(data.blockedSources)) {
+          state.blockedSources = new Set(data.blockedSources.map(normalizeSourceKey));
+          state.allowedSources = new Set((data.allowedSources || []).map(normalizeSourceKey));
+        }
         if (data.ok && Array.isArray(data.ids)) {
           replacePosted(data.ids);
         }
@@ -1187,6 +1212,86 @@
       const jac = inter / (A.size + B.size - inter);
       const wjac = wUnion ? wInter / wUnion : 0;
       return wjac >= 0.22 || jac >= 0.5;
+    }
+
+    // ============================================================
+    // GPT(ChatGPT-User)がBOT対策で読めない可能性が高い媒体。
+    // 2026-07-03 実測: robots.txt拒否 or 403/401/429/接続拒否だったもの+定番ペイウォール。
+    // ユーザーは詳細パネルの「この媒体は読めなかった」で追加、「解除」で
+    // このリストより優先される許可指定ができる(サーバー同期)。
+    // ============================================================
+    const UNREADABLE_SOURCE_PATTERNS = [
+      /seeking alpha/i,
+      /barron/i,
+      /nasdaq/i,
+      /hpcwire/i,
+      /data center dynamics/i,
+      /yahoo/i,
+      /\bmsn\b/i,
+      /moomoo/i,
+      /wall street journal|\bwsj\b/i,
+      /bloomberg/i,
+      /reuters/i,
+      /investor'?s business daily/i
+    ];
+
+    function normalizeSourceKey(name) {
+      return String(name || "").toLowerCase().replace(/[\s　]+/g, " ").trim();
+    }
+
+    function isUnreadableSource(name) {
+      const key = normalizeSourceKey(name);
+      if (!key) return false;
+      if (state.allowedSources.has(key)) return false;
+      if (state.blockedSources.has(key)) return true;
+      return UNREADABLE_SOURCE_PATTERNS.some(function (re) { return re.test(key); });
+    }
+
+    // グループ内に読める媒体が1つでもあれば「読める」扱い
+    // (同じ記事を読めるURLがあるなら省く理由がないため)。
+    function itemUnreadable(item) {
+      if (item.form) return false; // SEC本文はEDGARで読める
+      return (item.groupItems || [item]).every(function (member) {
+        return isUnreadableSource(member.source);
+      });
+    }
+
+    async function toggleBlockedSource() {
+      const item = findItem(state.selectedId);
+      if (!item || !item.source) return;
+      const key = normalizeSourceKey(item.source);
+      const wasUnreadable = isUnreadableSource(item.source);
+      if (wasUnreadable) {
+        state.allowedSources.add(key);
+        state.blockedSources.delete(key);
+      } else {
+        state.blockedSources.add(key);
+        state.allowedSources.delete(key);
+      }
+      updateBlockSourceButton(item);
+      renderFeed();
+      el.copyStatus.innerHTML = wasUnreadable
+        ? "<span class=\"ok\">「" + escapeHtml(item.source) + "」を読める扱いに戻しました</span>"
+        : "<span class=\"ok\">「" + escapeHtml(item.source) + "」を読めない媒体として記録しました</span>";
+      try {
+        await fetch(postedEndpoint, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(wasUnreadable ? { unblockSource: item.source } : { blockSource: item.source })
+        });
+      } catch (error) {
+        // 失敗してもローカル表示は維持。次回開いた時にサーバー状態へ戻る。
+      }
+    }
+
+    function updateBlockSourceButton(item) {
+      if (!item || !item.source) {
+        el.blockSource.textContent = "この媒体は読めなかった";
+        return;
+      }
+      el.blockSource.textContent = isUnreadableSource(item.source)
+        ? "「" + item.source + "」を読める扱いに戻す"
+        : "「" + item.source + "」は読めなかった";
     }
 
     function isDirectlyPosted(item) {

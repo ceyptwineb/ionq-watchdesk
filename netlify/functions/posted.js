@@ -12,6 +12,10 @@ const STORE_NAME = "ionq-watchdesk";
 const POSTED_KEY = "posted-state";
 const CHECKED_PREFIX = "posted/1/";
 const UNCHECKED_PREFIX = "posted/0/";
+// GPTがBOT対策で読めなかった媒体名(ユーザーが手動登録)。1媒体=1キー。
+// allowsrc/ は「組み込みの読めないリストを上書きして読める扱いにする」例外。
+const BLOCKED_SOURCE_PREFIX = "blockedsrc/";
+const ALLOWED_SOURCE_PREFIX = "allowsrc/";
 
 exports.handler = async (event = {}) => {
   if (event.httpMethod === "OPTIONS") return cors(204, "");
@@ -30,7 +34,12 @@ exports.handler = async (event = {}) => {
     const store = blobs.getStore(opts);
 
     if (event.httpMethod === "GET" || !event.httpMethod) {
-      return cors(200, { ok: true, ids: await readMergedIds(store) });
+      return cors(200, {
+        ok: true,
+        ids: await readMergedIds(store),
+        blockedSources: await listKeys(store, BLOCKED_SOURCE_PREFIX),
+        allowedSources: await listKeys(store, ALLOWED_SOURCE_PREFIX)
+      });
     }
 
     if (event.httpMethod === "POST") {
@@ -45,6 +54,20 @@ exports.handler = async (event = {}) => {
         await Promise.all(keys.map((key) => store.delete(key).catch(() => {})));
         await store.set(POSTED_KEY, JSON.stringify({ ids: [] }));
         return cors(200, { ok: true, ids: [] });
+      }
+
+      // 読めない媒体の登録/解除(解除は許可リストにも入れて組み込みリストを上書き)
+      if (typeof body.blockSource === "string" && body.blockSource.trim()) {
+        const key = normalizeSourceKey(body.blockSource);
+        await store.set(BLOCKED_SOURCE_PREFIX + key, "1");
+        await store.delete(ALLOWED_SOURCE_PREFIX + key).catch(() => {});
+        return cors(200, { ok: true });
+      }
+      if (typeof body.unblockSource === "string" && body.unblockSource.trim()) {
+        const key = normalizeSourceKey(body.unblockSource);
+        await store.set(ALLOWED_SOURCE_PREFIX + key, "1");
+        await store.delete(BLOCKED_SOURCE_PREFIX + key).catch(() => {});
+        return cors(200, { ok: true });
       }
 
       // 一括追加（端末ローカルにしか無かった分をサーバーへ吸い上げる用途）
@@ -109,6 +132,10 @@ async function listKeys(store, prefix) {
     console.warn(`posted: could not list ${prefix}.`, error.message);
     return [];
   }
+}
+
+function normalizeSourceKey(name) {
+  return String(name || "").toLowerCase().replace(/[\s　]+/g, " ").trim();
 }
 
 function parseBody(raw) {
