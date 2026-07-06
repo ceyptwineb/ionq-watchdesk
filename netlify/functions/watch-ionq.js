@@ -499,6 +499,7 @@ function normalizeLatestItems(data) {
   const seen = new Set();
   return items
     .filter((item) => item.title || item.url)
+    .filter((item) => !isExcludedSource(item))
     .filter((item) => {
       if (seen.has(item.id)) return false;
       seen.add(item.id);
@@ -558,6 +559,15 @@ function fnvHash(basis) {
 
 function idInSet(item, set) {
   return set.has(item.id) || (item.legacyId && set.has(item.legacyId));
+}
+
+// 収集から完全に除外するスパム媒体。index.htmlにも同じリストあり(変更時は両方)。
+// Mshale: IONQと無関係な動画スパムを大量に流すまとめサイト(2026-07-03確認)。
+const EXCLUDED_SOURCE_PATTERNS = [/\bmshale\b/i];
+
+function isExcludedSource(item) {
+  const text = `${item.source || ""} ${item.title || ""}`;
+  return EXCLUDED_SOURCE_PATTERNS.some((re) => re.test(text));
 }
 
 // ============================================================
