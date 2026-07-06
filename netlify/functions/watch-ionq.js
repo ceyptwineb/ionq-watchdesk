@@ -501,7 +501,6 @@ function normalizeLatestItems(data) {
     .filter((item) => item.title || item.url)
     .filter((item) => !isExcludedSource(item))
     .filter((item) => !isIrrelevantWire(item))
-    .filter((item) => !isNonMarketQuantum(item))
     .filter((item) => {
       if (seen.has(item.id)) return false;
       seen.add(item.id);
@@ -611,14 +610,9 @@ function isIrrelevantWire(item) {
   return !TRACKED_COMPANY_RE.test(item.title || "");
 }
 
-// 量子業界(QNEWS)は学術論文の要約が大量に混ざるため、
-// 市場・事業・政策に関わるものだけ残す(株価材料サイトとしての選別)。
-const QUANTUM_BUSINESS_RE = /stock|shares|investor|funding|\bfunds?\b|grant|award|raises|million|billion|ipo|contract|partnership|acquisition|merger|government|defense|policy|executive order|trump|white house|congress|senate|analyst|price target|revenue|earnings|commercial|launch|deploy|ionq|rigetti|d-wave|quantinuum|qubt|\bibm\b|google|microsoft|nvidia|amazon|intel|pasqal|quera|honeywell/i;
-
-function isNonMarketQuantum(item) {
-  if (item.type !== "QNEWS") return false;
-  return !QUANTUM_BUSINESS_RE.test(item.title || "");
-}
+// 量子業界(QNEWS)は研究・学術ニュースも投資判断の文脈になるため残す。
+// 以前は市場ワードで絞っていたが、技術動向も追いたいとの方針で撤廃(2026-07-03)。
+// スパム/ジャンク/文脈なし短タイトルは isExcludedSource 側で引き続き除去する。
 
 // ============================================================
 // 類似記事の同一視: index.html と同じロジック。変更時は両方同時に。
