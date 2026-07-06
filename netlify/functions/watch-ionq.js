@@ -500,6 +500,8 @@ function normalizeLatestItems(data) {
   return items
     .filter((item) => item.title || item.url)
     .filter((item) => !isExcludedSource(item))
+    .filter((item) => !isIrrelevantWire(item))
+    .filter((item) => !isNonMarketQuantum(item))
     .filter((item) => {
       if (seen.has(item.id)) return false;
       seen.add(item.id);
@@ -561,13 +563,61 @@ function idInSet(item, set) {
   return set.has(item.id) || (item.legacyId && set.has(item.legacyId));
 }
 
-// 収集から完全に除外するスパム媒体。index.htmlにも同じリストあり(変更時は両方)。
-// Mshale: IONQと無関係な動画スパムを大量に流すまとめサイト(2026-07-03確認)。
-const EXCLUDED_SOURCE_PATTERNS = [/\bmshale\b/i];
+// ============================================================
+// 収集品質フィルタ(2026-07-03に実データ170件で棚卸しして設計)。
+// index.htmlにも同じ除外ロジックあり(変更時は両方)。
+// ============================================================
+// 完全除外するスパム/低品質媒体:
+// - Mshale: IONQと無関係な動画スパムの巣
+// - AD HOC NEWS / Pluang: 海外アグリゲータの転載(実質重複)
+// - Stock Traders Daily: ワラント取引の定型スパム
+// - ChartMill: 記事ではなく株価クオートページ
+// - MarketBeat: 「◯◯社が$3M保有」型の自動生成記事が大量
+const EXCLUDED_SOURCE_PATTERNS = [
+  /\bmshale\b/i,
+  /\bad hoc news\b/i,
+  /\bpluang\b/i,
+  /stock traders daily/i,
+  /chartmill/i,
+  /marketbeat/i
+];
+
+// タイトル自体がジャンクのパターン:
+// - (hcISYvRmwV) 型の動画IDコード(スパム転載の署名)
+// - フォーラム/クオートページ
+// - 海外預託証券のテクニカルページ
+const JUNK_TITLE_PATTERNS = [
+  /\([A-Za-z0-9]{8,12}\)\s*(-|$)/,
+  /stock forum and discussion/i,
+  /stock quote price|price and forecast\b/i,
+  /depositary receipts/i
+];
 
 function isExcludedSource(item) {
   const text = `${item.source || ""} ${item.title || ""}`;
-  return EXCLUDED_SOURCE_PATTERNS.some((re) => re.test(text));
+  if (EXCLUDED_SOURCE_PATTERNS.some((re) => re.test(text))) return true;
+  if (JUNK_TITLE_PATTERNS.some((re) => re.test(item.title || ""))) return true;
+  // 「John Martinis」だけのような文脈のないタイトル(RSSの人物アーカイブ等)
+  if (!item.form && String(item.title || "").trim().split(/\s+/).length <= 2) return true;
+  return false;
+}
+
+// Nasdaq銘柄別RSSは対象銘柄と無関係な記事(WDAY/AGYS/AMAT等)も流してくるため、
+// 追跡銘柄名か量子ワードをタイトルに含まないワイヤー記事は捨てる。
+const TRACKED_COMPANY_RE = /quantum|qubit|qpu|ionq|rigetti|d-wave|dwave|quantinuum|\bqubt\b|skywater|\bskyt\b/i;
+
+function isIrrelevantWire(item) {
+  if (item.label !== "ワイヤー速報" && item.label !== "競合速報") return false;
+  return !TRACKED_COMPANY_RE.test(item.title || "");
+}
+
+// 量子業界(QNEWS)は学術論文の要約が大量に混ざるため、
+// 市場・事業・政策に関わるものだけ残す(株価材料サイトとしての選別)。
+const QUANTUM_BUSINESS_RE = /stock|shares|investor|funding|\bfunds?\b|grant|award|raises|million|billion|ipo|contract|partnership|acquisition|merger|government|defense|policy|executive order|trump|white house|congress|senate|analyst|price target|revenue|earnings|commercial|launch|deploy|ionq|rigetti|d-wave|quantinuum|qubt|\bibm\b|google|microsoft|nvidia|amazon|intel|pasqal|quera|honeywell/i;
+
+function isNonMarketQuantum(item) {
+  if (item.type !== "QNEWS") return false;
+  return !QUANTUM_BUSINESS_RE.test(item.title || "");
 }
 
 // ============================================================

@@ -329,7 +329,7 @@
         <p>48時間以内の情報収集と投稿元ネタ管理</p>
       </div>
       <div class="status-box">
-        <div id="version">version: source-ban-20260703</div>
+        <div id="version">version: collect-tune-20260703</div>
         <div id="updated">updated: --</div>
         <div id="endpoint">source: --</div>
         <div id="summary">summary: --</div>
@@ -388,7 +388,7 @@
   </main>
 
   <script>
-    const APP_VERSION = "source-ban-20260703";
+    const APP_VERSION = "collect-tune-20260703";
     const PUBLIC_ORIGIN = "https://ionqwatchdesk.netlify.app";
     const GPTS_URL = "https://chatgpt.com/g/g-6a41a5264e6081918db223a3b8a4d808-liang-zi-rehoto";
     const DEFAULT_MAX_AGE_HOURS = 48;
@@ -1240,12 +1240,29 @@
       return String(name || "").toLowerCase().replace(/[\s　]+/g, " ").trim();
     }
 
-    // 収集から完全に除外するスパム媒体。watch-ionq.jsにも同じリストあり(変更時は両方)。
-    const EXCLUDED_SOURCE_PATTERNS = [/\bmshale\b/i];
+    // 収集品質フィルタ。watch-ionq.jsにも同じロジックあり(変更時は両方)。
+    // スパム媒体 + ジャンクタイトル + 文脈なし短タイトルを除外する。
+    const EXCLUDED_SOURCE_PATTERNS = [
+      /\bmshale\b/i,
+      /\bad hoc news\b/i,
+      /\bpluang\b/i,
+      /stock traders daily/i,
+      /chartmill/i,
+      /marketbeat/i
+    ];
+    const JUNK_TITLE_PATTERNS = [
+      /\([A-Za-z0-9]{8,12}\)\s*(-|$)/,
+      /stock forum and discussion/i,
+      /stock quote price|price and forecast\b/i,
+      /depositary receipts/i
+    ];
 
     function isExcludedSource(item) {
       const text = (item.source || "") + " " + (item.title || "");
-      return EXCLUDED_SOURCE_PATTERNS.some(function (re) { return re.test(text); });
+      if (EXCLUDED_SOURCE_PATTERNS.some(function (re) { return re.test(text); })) return true;
+      if (JUNK_TITLE_PATTERNS.some(function (re) { return re.test(item.title || ""); })) return true;
+      if (!item.form && String(item.title || "").trim().split(/\s+/).length <= 2) return true;
+      return false;
     }
 
     function isUnreadableSource(name) {
