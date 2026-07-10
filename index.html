@@ -326,10 +326,10 @@
     <aside class="side">
       <div class="brand">
         <h1>IONQ Watchdesk</h1>
-        <p>48時間以内の情報収集と投稿元ネタ管理</p>
+        <p>最新ニュースの収集と投稿ネタのすみわけ管理</p>
       </div>
       <div class="status-box">
-        <div id="version">version: keep-research-20260703</div>
+        <div id="version">version: post-tier-20260710</div>
         <div id="updated">updated: --</div>
         <div id="endpoint">source: --</div>
         <div id="summary">summary: --</div>
@@ -350,9 +350,19 @@
       </div>
       <div class="toolbar">
         <div class="age-tabs wide">
-          <button id="age48" class="primary" type="button">48h</button>
+          <button id="age24" class="primary" type="button">24h</button>
+          <button id="age48" type="button">48h</button>
           <button id="age72" type="button">72h</button>
           <button id="age168" type="button">7日</button>
+        </div>
+      </div>
+      <div class="toolbar">
+        <div class="age-tabs wide">
+          <span class="muted" style="align-self:center;">投稿ネタ:</span>
+          <button id="tierAll" class="primary" type="button">全部</button>
+          <button id="tier0" type="button">◎最優先</button>
+          <button id="tier1" type="button">◯検討</button>
+          <button id="tier2" type="button">△参考</button>
         </div>
       </div>
       <div id="feed" class="feed"></div>
@@ -388,10 +398,10 @@
   </main>
 
   <script>
-    const APP_VERSION = "keep-research-20260703";
+    const APP_VERSION = "post-tier-20260710";
     const PUBLIC_ORIGIN = "https://ionqwatchdesk.netlify.app";
     const GPTS_URL = "https://chatgpt.com/g/g-6a41a5264e6081918db223a3b8a4d808-liang-zi-rehoto";
-    const DEFAULT_MAX_AGE_HOURS = 48;
+    const DEFAULT_MAX_AGE_HOURS = 24;
     const isLocalPreview = location.protocol === "file:" || location.hostname === "127.0.0.1" || location.hostname === "localhost";
     const API = isLocalPreview ? PUBLIC_ORIGIN : "";
     const latestEndpoint = API + "/.netlify/functions/latest-ionq";
@@ -405,6 +415,7 @@
       view: "all",
       query: "",
       maxAgeHours: DEFAULT_MAX_AGE_HOURS,
+      tier: "all",
       blockedSources: new Set(),
       allowedSources: new Set(),
       hideUnreadable: localStorage.getItem("ionq-hide-unreadable") === "1"
@@ -430,9 +441,14 @@
       copyUrl: document.getElementById("copyUrl"),
       openUrl: document.getElementById("openUrl"),
       copyStatus: document.getElementById("copyStatus"),
+      age24: document.getElementById("age24"),
       age48: document.getElementById("age48"),
       age72: document.getElementById("age72"),
-      age168: document.getElementById("age168")
+      age168: document.getElementById("age168"),
+      tierAll: document.getElementById("tierAll"),
+      tier0: document.getElementById("tier0"),
+      tier1: document.getElementById("tier1"),
+      tier2: document.getElementById("tier2")
     };
 
     init();
@@ -467,8 +483,11 @@
         renderFeed();
       });
       el.blockSource.addEventListener("click", toggleBlockedSource);
-      [[el.age48, 48], [el.age72, 72], [el.age168, 168]].forEach(function (pair) {
+      [[el.age24, 24], [el.age48, 48], [el.age72, 72], [el.age168, 168]].forEach(function (pair) {
         pair[0].addEventListener("click", function () { setMaxAge(pair[1]); });
+      });
+      [[el.tierAll, "all"], [el.tier0, 0], [el.tier1, 1], [el.tier2, 2]].forEach(function (pair) {
+        pair[0].addEventListener("click", function () { setTier(pair[1]); });
       });
       el.showAll.addEventListener("click", function () {
         state.view = "all";
@@ -519,12 +538,48 @@
 
     function setMaxAge(hours) {
       state.maxAgeHours = hours;
-      [[el.age48, 48], [el.age72, 72], [el.age168, 168]].forEach(function (pair) {
+      [[el.age24, 24], [el.age48, 48], [el.age72, 72], [el.age168, 168]].forEach(function (pair) {
         pair[0].className = state.maxAgeHours === pair[1] ? "primary" : "";
       });
       applyAgeFilter();
       updateViewButtons();
       renderFeed();
+    }
+
+    function setTier(tier) {
+      state.tier = tier;
+      [[el.tierAll, "all"], [el.tier0, 0], [el.tier1, 1], [el.tier2, 2]].forEach(function (pair) {
+        pair[0].className = state.tier === pair[1] ? "primary" : "";
+      });
+      renderFeed();
+    }
+
+    // ============================================================
+    // 投稿ネタのすみわけ(2週間の運用分析で反応が良かった順に3分類)。
+    // ◎最優先: IonQ直結の株価材料(受注・決算・買収・アナリスト・IR/SEC)
+    //          → 反応・拡散が最も大きい。積極的に投稿。
+    // ◯検討  : 競合の重要ニュース・政策・他社の決算/資金 など株価材料。
+    //          → IonQ文脈を添えて選んで投稿。
+    // △参考  : 技術・研究・学術・一般業界 → 反応薄。自分の情報収集用。
+    // ============================================================
+    function postTier(item) {
+      const text = signalText(item);
+      const ionqDirect = item.category === "ir" || item.category === "sec" || /\bionq\b|\$ionq/.test(text);
+      const moving = isMarketMovingCandidate(item);
+      if (ionqDirect && moving) return 0;
+      if (ionqDirect || moving) return 1;
+      return 2;
+    }
+
+    const TIER_META = {
+      0: { label: "◎最優先", border: "#0c756d", color: "#0c756d", bg: "#dff2ee" },
+      1: { label: "◯検討", border: "#4a76d3", color: "#2f52a0", bg: "#eaf0fb" },
+      2: { label: "△参考", border: "#c9cec6", color: "#8a938a", bg: "#f4f6f2" }
+    };
+
+    function renderTierBadge(item) {
+      const m = TIER_META[postTier(item)];
+      return "<span class=\"badge\" style=\"border-color:" + m.border + ";color:" + m.color + ";background:" + m.bg + ";font-weight:700;\">" + m.label + "</span>";
     }
 
     function applyAgeFilter() {
@@ -657,7 +712,7 @@
     function renderFeed() {
       const items = filteredItems();
       const priorityItems = state.items
-        .filter(function (item) { return isMarketMovingCandidate(item) && !isPosted(item); })
+        .filter(function (item) { return postTier(item) === 0 && !isPosted(item); })
         .slice(0, 5);
 
       el.feed.innerHTML = "";
@@ -668,7 +723,7 @@
         empty.className = "empty";
         empty.innerHTML = [
           "<div>" + state.maxAgeHours + "時間以内の表示対象ニュースはありません。</div>",
-          "<div class=\"muted\">上の 48h / 72h / 7日 ボタンで表示期間を広げられます。</div>"
+          "<div class=\"muted\">上の 24h / 48h / 72h / 7日 で期間を、投稿ネタで区分を切り替えられます。</div>"
         ].join("");
         el.feed.appendChild(empty);
         return;
@@ -698,6 +753,7 @@
         "<div class=\"item-title\">" + escapeHtml(displayTitle(item)) + "</div>",
         item.titleJa ? "<div class=\"item-title-original\">" + escapeHtml(item.title) + "</div>" : "",
         "<div class=\"meta\">",
+        renderTierBadge(item),
         "<span class=\"badge\">" + escapeHtml(item.label) + "</span>",
         (item.groupItems && item.groupItems.length > 1 ? "<span class=\"badge\">同ニュース×" + item.groupItems.length + "</span>" : ""),
         (itemUnreadable(item) ? "<span class=\"badge\" style=\"border-color:#d3a64a;color:#9b5a00;\">GPT読取難</span>" : ""),
@@ -729,6 +785,7 @@
       return state.items.filter(function (item) {
         if (state.view === "posted" && !isPosted(item)) return false;
         if (state.hideUnreadable && itemUnreadable(item)) return false;
+        if (state.tier !== "all" && postTier(item) !== state.tier) return false;
         if (!state.query) return true;
         return [item.title, item.titleJa, item.source, item.label, item.form, item.ticker].join(" ").toLowerCase().includes(state.query);
       });
@@ -742,6 +799,7 @@
         "<h2>" + escapeHtml(displayTitle(item)) + "</h2>",
         item.titleJa ? "<div class=\"item-title-original\">" + escapeHtml(item.title) + "</div>" : "",
         "<div class=\"meta\">",
+        renderTierBadge(item),
         "<span class=\"badge\">" + escapeHtml(item.label) + "</span>",
         (item.groupItems && item.groupItems.length > 1 ? "<span class=\"badge\">同ニュース×" + item.groupItems.length + "</span>" : ""),
         renderSignalBadges(item),
