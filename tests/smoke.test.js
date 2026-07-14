@@ -55,6 +55,15 @@ test("初期表示期間は説明どおり48時間", () => {
   assert.match(html, /id="age48" class="primary"/);
 });
 
+test("PC表示では3段のツールバー後にニュース一覧を配置する", () => {
+  const html = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
+  assert.match(
+    html,
+    /\.main\s*\{[^}]*grid-template-rows:\s*auto auto auto minmax\(0, 1fr\);/s
+  );
+  assert.match(html, /\.age-tabs\s*\{[^}]*flex-wrap:\s*wrap;/s);
+});
+
 test("古いキャッシュと軽量収集をIDでマージする", () => {
   const { __test } = loadHelpers("netlify/functions/latest-ionq.js", ["mergeWithCached"]);
   const cached = [
