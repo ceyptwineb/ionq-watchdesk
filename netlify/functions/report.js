@@ -8,14 +8,13 @@ const MIN_ARTICLE_CHARS = 450;
 exports.handler = async (event = {}) => {
   if (event.httpMethod === "OPTIONS") return cors(204, "");
 
-  // 簡易認証: REPORT_SECRET が設定されている場合、x-report-secret ヘッダーの一致を必須にする。
-  // これが無いと誰でもこのエンドポイントを叩いてOpenAIクレジットを消費できてしまう。
+  // 認証は必須。未設定時に公開すると、第三者が任意URLの取得や
+  // OpenAIクレジットの消費に利用できてしまうため、fail-closedにする。
   const requiredSecret = String(process.env.REPORT_SECRET || "").trim();
-  if (requiredSecret) {
-    const headers = event.headers || {};
-    const given = String(headers["x-report-secret"] || headers["X-Report-Secret"] || "").trim();
-    if (given !== requiredSecret) return cors(401, { ok: false, error: "unauthorized" });
-  }
+  if (!requiredSecret) return cors(503, { ok: false, error: "report_secret_not_configured" });
+  const headers = event.headers || {};
+  const given = String(headers["x-report-secret"] || headers["X-Report-Secret"] || "").trim();
+  if (given !== requiredSecret) return cors(401, { ok: false, error: "unauthorized" });
 
   try {
     if (event.httpMethod === "GET") {
@@ -108,13 +107,11 @@ async function fetchArticleAttempt(url, method) {
       redirect: "follow",
       signal: controller.signal,
       headers: {
-        "user-agent": "Mozilla/5.0 (compatible; IonQWatchdesk/2.0; +https://ionqwatchdesk.netlify.app/)",
+        "user-agent": "Mozilla/5.0 (compatible; IonQWatchdesk/2.0; +https://ionqnews.netlify.app/)",
         "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.7",
         "accept-language": "ja,en-US;q=0.9,en;q=0.8"
       }
     });
-    clearTimeout(timeout);
-
     if (!response.ok) {
       return { ok: false, error: `fetch_${response.status}`, method, finalUrl: response.url, text: "" };
     }
@@ -144,7 +141,6 @@ async function fetchArticleAttempt(url, method) {
       text: text.slice(0, MAX_ARTICLE_CHARS)
     };
   } catch (error) {
-    clearTimeout(timeout);
     return {
       ok: false,
       error: error.name === "AbortError" ? "fetch_timeout" : (error.message || "fetch_failed"),
@@ -152,20 +148,16 @@ async function fetchArticleAttempt(url, method) {
       finalUrl: url,
       text: ""
     };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
 function readerUrls(url) {
   const normalized = String(url || "").trim();
-  const noScheme = normalized.replace(/^https?:\/\//i, "");
-  return [
-    `https://r.jina.ai/http://r.jina.ai/http://${normalized}`,
-    `https://r.jina.ai/http://r.jina.ai/http://https://${noScheme}`,
-    `https://r.jina.ai/http://r.jina.ai/http://http://${noScheme}`,
-    `https://r.jina.ai/http://${normalized}`,
-    `https://r.jina.ai/http://https://${noScheme}`,
-    `https://r.jina.ai/http://http://${noScheme}`
-  ];
+  // Jina Readerは「https://r.jina.ai/ + 元URL」の形式。
+  // 以前はr.jina.aiとスキームを二重に連結しており、全候補が不正URLだった。
+  return normalized ? [`https://r.jina.ai/${normalized}`] : [];
 }
 
 function extractReadableText(html) {
