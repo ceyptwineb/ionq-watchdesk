@@ -2,6 +2,10 @@
   "name": "ionq-watchdesk",
   "version": "1.0.0",
   "private": true,
+  "scripts": {
+    "check": "node --check netlify/functions/watch-ionq.js && node --check netlify/functions/latest-ionq.js && node --check netlify/functions/posted.js && node --check netlify/functions/report.js",
+    "test": "node --test"
+  },
   "dependencies": {
     "@netlify/blobs": "^9.1.2"
   }

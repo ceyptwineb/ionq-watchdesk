@@ -1,11 +1,13 @@
 // IONQ Watchdesk - フロント向けAPI
-// 変更点: 毎回のフル収集をやめ、watch-ionq(cron 5分おき)が書いたBlobキャッシュを返すだけにした。
+// 変更点: 毎回のフル収集をやめ、watch-ionq(cron 30分おき)が書いたBlobキャッシュを返すだけにした。
 // - ページを何回開いてもタイムアウトしない・外部APIを叩かない・表示が一瞬で出る
-// - キャッシュが無い/古い(30分超)場合のみ、軽量ライブ収集(SEC + Nasdaqワイヤーのみ)にフォールバック
+// - キャッシュが無い/古い(75分超)場合のみ、軽量ライブ収集(SEC + Nasdaqワイヤーのみ)にフォールバック
 
 const STORE_NAME = "ionq-watchdesk";
 const CACHE_KEY = "latest-cache";
-const CACHE_STALE_MINUTES = 30;
+// Cronと同じ30分では実行の数秒の遅れだけで毎回staleになるため、
+// 2回分+余裕を持たせる。1回失敗しても既存一覧を維持できる。
+const CACHE_STALE_MINUTES = 75;
 const SEC_CIK = "0001824920";
 const FETCH_TIMEOUT_MS = 6000;
 
@@ -25,13 +27,18 @@ exports.handler = async (event = {}) => {
 
     // フォールバック: キャッシュが無い(初回デプロイ直後など)か古い場合のみ軽量ライブ収集
     const live = await lightCollect();
-    const decorated = await decorateJapanese(live, cached);
+    // 軽量収集だけで一覧全体を置き換えると、量子専門媒体などが突然消える。
+    // 古いフルキャッシュへ最新のSEC/Nasdaqを上書きマージして表示を維持する。
+    const merged = mergeWithCached(live, cached && cached.items);
+    const decorated = await decorateJapanese(merged, cached);
     return json(200, {
       updatedAt: new Date().toISOString(),
-      cachedAt: cached ? cached.cachedAt : null,
+      cachedAt: cached ? (cached.cachedAt || cached.updatedAt || null) : null,
       items: decorated,
       cacheStatus: cached ? "stale_fallback" : "miss_fallback",
-      note: "キャッシュ未生成のため軽量収集で応答。数分後にwatch-ionqが全ソースを収集します。"
+      note: cached
+        ? "フルキャッシュが古いため、既存一覧へSEC/Nasdaqの軽量収集結果をマージしました。"
+        : "キャッシュ未生成のため軽量収集で応答。次回のwatch-ionqが全ソースを収集します。"
     });
   } catch (error) {
     return json(500, {
@@ -45,7 +52,22 @@ exports.handler = async (event = {}) => {
 function isCacheFresh(cached) {
   const ms = Date.parse(cached.cachedAt || cached.updatedAt || "");
   if (!Number.isFinite(ms)) return false;
-  return Date.now() - ms <= CACHE_STALE_MINUTES * 60 * 1000;
+  const age = Date.now() - ms;
+  return age >= -5 * 60 * 1000 && age <= CACHE_STALE_MINUTES * 60 * 1000;
+}
+
+function mergeWithCached(liveItems, cachedItems) {
+  const merged = new Map();
+  (Array.isArray(cachedItems) ? cachedItems : []).forEach((item) => {
+    if (item && item.id) merged.set(item.id, item);
+  });
+  (Array.isArray(liveItems) ? liveItems : []).forEach((item) => {
+    if (!item || !item.id) return;
+    merged.set(item.id, { ...(merged.get(item.id) || {}), ...item });
+  });
+  return [...merged.values()].sort((a, b) =>
+    Date.parse(b.publishedAt || b.acceptedAt || 0) - Date.parse(a.publishedAt || a.acceptedAt || 0)
+  );
 }
 
 // ---------------------------------------------------------------- 軽量ライブ収集

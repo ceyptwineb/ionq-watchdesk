@@ -40,13 +40,13 @@ const TRANSLATE_CONCURRENCY = 6;
 const MAX_NOTIFY_EMBEDS = 5;
 const DEFAULT_LOOKBACK_MINUTES = 1440;
 const FETCH_TIMEOUT_MS = 6000;
-const WATCHDESK_FALLBACK_URL = "https://ionqwatchdesk.netlify.app/";
+const WATCHDESK_FALLBACK_URL = "https://ionqnews.netlify.app/";
 const SITE_URL = (process.env.WATCHDESK_URL || WATCHDESK_FALLBACK_URL).trim() || WATCHDESK_FALLBACK_URL;
 
 exports.handler = async (event = {}, context = {}) => {
   const startedAt = new Date().toISOString();
   // 関数タイムアウト(10秒)の1.5秒前を翻訳の締切にする。
-  // 締切が来たら翻訳を打ち切り、残りは次回実行(5分後)がキャッシュ済み分に追加していく。
+  // 締切が来たら翻訳を打ち切り、残りは次回実行(30分後)がキャッシュ済み分に追加していく。
   const deadlineAt = typeof context.getRemainingTimeInMillis === "function"
     ? Date.now() + context.getRemainingTimeInMillis() - 1500
     : Date.now() + 8000;

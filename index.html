@@ -329,7 +329,7 @@
         <p>最新ニュースの収集と投稿ネタのすみわけ管理</p>
       </div>
       <div class="status-box">
-        <div id="version">version: post-tier-20260710</div>
+        <div id="version">version: netlify-fixes-20260714</div>
         <div id="updated">updated: --</div>
         <div id="endpoint">source: --</div>
         <div id="summary">summary: --</div>
@@ -350,8 +350,8 @@
       </div>
       <div class="toolbar">
         <div class="age-tabs wide">
-          <button id="age24" class="primary" type="button">24h</button>
-          <button id="age48" type="button">48h</button>
+          <button id="age24" type="button">24h</button>
+          <button id="age48" class="primary" type="button">48h</button>
           <button id="age72" type="button">72h</button>
           <button id="age168" type="button">7日</button>
         </div>
@@ -398,10 +398,10 @@
   </main>
 
   <script>
-    const APP_VERSION = "post-tier-20260710";
-    const PUBLIC_ORIGIN = "https://ionqwatchdesk.netlify.app";
+    const APP_VERSION = "netlify-fixes-20260714";
+    const PUBLIC_ORIGIN = "https://ionqnews.netlify.app";
     const GPTS_URL = "https://chatgpt.com/g/g-6a41a5264e6081918db223a3b8a4d808-liang-zi-rehoto";
-    const DEFAULT_MAX_AGE_HOURS = 24;
+    const DEFAULT_MAX_AGE_HOURS = 48;
     const isLocalPreview = location.protocol === "file:" || location.hostname === "127.0.0.1" || location.hostname === "localhost";
     const API = isLocalPreview ? PUBLIC_ORIGIN : "";
     const latestEndpoint = API + "/.netlify/functions/latest-ionq";
@@ -450,6 +450,11 @@
       tier1: document.getElementById("tier1"),
       tier2: document.getElementById("tier2")
     };
+
+    // 初回同期でも参照するため、init()より先に初期化する。
+    // 以前は下部で宣言していたため、起動直後のloadPostedFromServer()が
+    // Temporal Dead Zoneに入り、投稿済み状態の読込みが約60秒遅れていた。
+    const pendingOps = new Map(); // id -> 望みの状態(true/false)
 
     init();
 
@@ -711,7 +716,9 @@
 
     function renderFeed() {
       const items = filteredItems();
-      const priorityItems = state.items
+      // 優先欄も検索・期間・投稿済み・読取可否・優先度フィルターに従わせる。
+      // 特に「投稿済みだけ」画面へ未投稿記事が出ないようにする。
+      const priorityItems = items
         .filter(function (item) { return postTier(item) === 0 && !isPosted(item); })
         .slice(0, 5);
 
@@ -729,7 +736,10 @@
         return;
       }
 
-      items.forEach(function (item) { appendItemCard(el.feed, item, false); });
+      const priorityIds = new Set(priorityItems.map(function (item) { return item.id; }));
+      items
+        .filter(function (item) { return !priorityIds.has(item.id); })
+        .forEach(function (item) { appendItemCard(el.feed, item, false); });
     }
 
     function appendPriorityBox(priorityItems) {
@@ -826,13 +836,23 @@
     }
 
     function buildGptsText(item) {
+      const target = preferredReadableItem(item);
       return [
-        item.url || "",
-        "title: " + (item.title || ""),
-        "source: " + (item.source || ""),
+        target.url || "",
+        "title: " + (target.title || item.title || ""),
+        "source: " + (target.source || item.source || ""),
         "type: " + (item.label || item.type || ""),
         "補足: URLがBOT対策などで開けない場合は、タイトルと出典でWeb検索して本文を確認してから書くこと。"
       ].filter(Boolean).join("\n");
+    }
+
+    function preferredReadableItem(item) {
+      const members = item && item.groupItems ? item.groupItems : [item];
+      return members.find(function (member) {
+        return member && member.url && !isUnreadableSource(member.source);
+      }) || members.find(function (member) {
+        return member && member.url;
+      }) || item;
     }
 
     async function copyGptsText() {
@@ -845,21 +865,30 @@
     async function copyAndOpenGpts() {
       const item = selectedItem();
       if (!item) return;
-      await copyText(buildGptsText(item));
-      el.copyStatus.innerHTML = "<span class=\"ok\">GPTs用テキストをコピーしてChatGPTを開きました</span>";
-      window.open(GPTS_URL, "_blank", "noopener,noreferrer");
+      // await後にwindow.openするとポップアップブロックされるブラウザがあるため、
+      // ユーザー操作の同期処理中に先に開く。
+      const opened = window.open(GPTS_URL, "_blank");
+      if (opened) opened.opener = null;
+      try {
+        await copyText(buildGptsText(item));
+        el.copyStatus.innerHTML = opened
+          ? "<span class=\"ok\">GPTs用テキストをコピーしてChatGPTを開きました</span>"
+          : "<span class=\"warn\">コピーしました。ポップアップが遮断されたため、GPTsを手動で開いてください</span>";
+      } catch (error) {
+        el.copyStatus.innerHTML = "<span class=\"warn\">GPTsは開きましたが、コピーに失敗しました</span>";
+      }
     }
     async function copySelectedUrl() {
       const item = selectedItem();
       if (!item) return;
-      await copyText(item.url || "");
+      await copyText(preferredReadableItem(item).url || "");
       el.copyStatus.innerHTML = "<span class=\"ok\">URLをコピーしました</span>";
     }
 
     function openSelectedUrl() {
       const item = selectedItem();
       if (!item || !item.url) return;
-      window.open(item.url, "_blank", "noopener,noreferrer");
+      window.open(preferredReadableItem(item).url, "_blank", "noopener,noreferrer");
     }
 
     function selectedItem() {
@@ -885,8 +914,6 @@
     // 定期同期がサーバー状態で置き換える際も、pending分は上書きしない。
     // これで「操作した直後に同期が走って元に戻る」チラつきを防ぐ。
     // ============================================================
-    const pendingOps = new Map(); // id -> 望みの状態(true/false)
-
     async function loadPostedFromServer() {
       await flushPendingOps();
       try {
@@ -1009,6 +1036,7 @@
       // サーバー書き込みは1回のPOSTだと件数が多い時に関数タイムアウトの恐れが
       // あるため、40IDずつに分けて送る。失敗した分はpendingが守る。
       try {
+        let allSynced = true;
         for (let i = 0; i < ids.length; i += 40) {
           const chunk = ids.slice(i, i + 40);
           const response = await fetch(postedEndpoint, {
@@ -1017,8 +1045,11 @@
             body: JSON.stringify({ ids: chunk, posted: true })
           });
           if (response.ok) chunk.forEach(function (id) { pendingOps.delete(id); });
+          else allSynced = false;
         }
-        el.copyStatus.innerHTML = "<span class=\"ok\">" + targets.length + " 件を投稿済みにしました</span>";
+        el.copyStatus.innerHTML = allSynced
+          ? "<span class=\"ok\">" + targets.length + " 件を投稿済みにしました</span>"
+          : "<span class=\"warn\">一部の同期に失敗(60秒後の自動同期で再送されます)</span>";
       } catch (error) {
         el.copyStatus.innerHTML = "<span class=\"warn\">一部の同期に失敗(60秒後の自動同期で再送されます)</span>";
       }
