@@ -38,7 +38,11 @@ const GOOGLE_NEWS_LIMIT = 25;
 const MAX_TRANSLATE_PER_RUN = 30;
 const TRANSLATE_CONCURRENCY = 6;
 const MAX_NOTIFY_EMBEDS = 5;
-const DEFAULT_LOOKBACK_MINUTES = 1440;
+// 1時間Cronの遅延や一時的な取得失敗には余裕を持たせつつ、
+// 前日以前の記事を新着通知しない。
+const DEFAULT_LOOKBACK_MINUTES = 360;
+const MAX_COLLECTION_AGE_HOURS = 24 * 8;
+const FUTURE_TOLERANCE_MS = 5 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 6000;
 const WATCHDESK_FALLBACK_URL = "https://ionqnews.netlify.app/";
 const SITE_URL = (process.env.WATCHDESK_URL || WATCHDESK_FALLBACK_URL).trim() || WATCHDESK_FALLBACK_URL;
@@ -46,7 +50,7 @@ const SITE_URL = (process.env.WATCHDESK_URL || WATCHDESK_FALLBACK_URL).trim() ||
 exports.handler = async (event = {}, context = {}) => {
   const startedAt = new Date().toISOString();
   // 関数タイムアウト(10秒)の1.5秒前を翻訳の締切にする。
-  // 締切が来たら翻訳を打ち切り、残りは次回実行(30分後)がキャッシュ済み分に追加していく。
+  // 締切が来たら翻訳を打ち切り、残りは次回実行(1時間後)がキャッシュ済み分に追加していく。
   const deadlineAt = typeof context.getRemainingTimeInMillis === "function"
     ? Date.now() + context.getRemainingTimeInMillis() - 1500
     : Date.now() + 8000;
@@ -115,6 +119,7 @@ exports.handler = async (event = {}, context = {}) => {
           kind: item.kind,
           source: item.source,
           publishedAt: item.publishedAt,
+          priorityScore: newsPriorityScore(item, startedAt),
           reason: notificationReason(item, startedAt, postedIds, notifiedIds, knownIds),
           id: item.id,
           url: item.url
@@ -139,7 +144,8 @@ exports.handler = async (event = {}, context = {}) => {
       !idInSet(item, notifiedIds) &&
       !idInSet(item, knownIds) &&
       !isLowSignalSec(item) &&
-      shouldNotifyByTime(item, startedAt)
+      shouldNotifyByTime(item, startedAt) &&
+      isNotificationWorthy(item, startedAt)
     );
 
     // 転載・言い換え記事の通知抑制:
@@ -148,41 +154,74 @@ exports.handler = async (event = {}, context = {}) => {
     buildSimilarityIndex(items.concat(previousItems));
     const seenItems = previousItems.filter((p) => !p.form &&
       (idInSet(p, knownIds) || idInSet(p, notifiedIds) || idInSet(p, postedIds)));
+    const immediateFresh = fresh.filter((item) => isImmediateNews(item, startedAt));
+    const digestFresh = fresh.filter((item) =>
+      !isImmediateNews(item, startedAt) &&
+      (item.form || !seenItems.some((seen) => isSimilarNews(item, seen)))
+    );
     const notifyList = [];
-    fresh.forEach((item) => {
+    immediateFresh.forEach((item) => {
       if (item.form ? false : seenItems.some((p) => isSimilarNews(item, p))) return;
-      if (notifyList.some((n) => isSimilarNews(n, item))) return;
+      const similarIndex = notifyList.findIndex((n) => isSimilarNews(n, item));
+      if (similarIndex >= 0) {
+        if (compareNewsPriority(item, notifyList[similarIndex], startedAt) < 0) {
+          notifyList[similarIndex] = item;
+        }
+        return;
+      }
       notifyList.push(item);
     });
 
-    if (!notifyList.length) {
-      fresh.forEach((entry) => notifiedIds.add(entry.id));
-      await writeState({
-        ...state,
-        notifiedIds: [...notifiedIds].slice(-500),
-        knownIds: mergeRecentIds(knownIds, currentIds),
-        lastCheckedAt: startedAt,
-        lastResult: fresh.length ? "suppressed_similar" : "no_new_items"
-      });
-      return json(200, { ok: true, result: fresh.length ? "suppressed_similar" : "no_new_items", totalItems: items.length });
+    // 最大5件に絞る前に「IonQ直結・材料性・一次情報」を優先する。
+    notifyList.sort((a, b) => compareNewsPriority(a, b, startedAt));
+    let digestQueue = mergeDigestQueue(state.digestItems || [], digestFresh, startedAt, postedIds);
+    let immediateSent = false;
+    let digestSent = false;
+    let lastDigestSlot = state.lastDigestSlot || "";
+
+    if (notifyList.length) {
+      await sendNotification(notifyList.slice(0, MAX_NOTIFY_EMBEDS), { totalCount: notifyList.length });
+      immediateSent = true;
+      // 抑制した類似分も通知済み扱いにして、以後の再浮上を防ぐ。
+      immediateFresh.forEach((entry) => notifiedIds.add(entry.id));
     }
 
-    await sendNotification(notifyList.slice(0, MAX_NOTIFY_EMBEDS), { totalCount: notifyList.length });
+    const digestSlot = currentDigestSlot(startedAt);
+    if (digestSlot && digestSlot !== lastDigestSlot && digestQueue.length) {
+      const digestList = digestQueue.slice().sort((a, b) => compareNewsPriority(a, b, startedAt));
+      await sendNotification(digestList.slice(0, MAX_NOTIFY_EMBEDS), {
+        totalCount: digestList.length,
+        title: digestSlot.endsWith("-08") ? "IONQ注目ニュース 朝まとめ" : "IONQ注目ニュース 夜まとめ"
+      });
+      digestList.forEach((entry) => notifiedIds.add(entry.id));
+      digestQueue = [];
+      lastDigestSlot = digestSlot;
+      digestSent = true;
+    }
 
-    // 抑制した類似分も通知済み扱いにして、以後の再浮上を防ぐ
-    fresh.forEach((entry) => notifiedIds.add(entry.id));
+    const result = immediateSent && digestSent ? "notified_and_digest" :
+      immediateSent ? "notified" : digestSent ? "digest_notified" :
+        digestQueue.length ? "queued_digest" : fresh.length ? "suppressed_similar" : "no_new_items";
     await writeState({
       ...state,
       notifiedIds: [...notifiedIds].slice(-500),
       knownIds: mergeRecentIds(knownIds, currentIds),
+      digestItems: digestQueue.slice(-100),
+      lastDigestSlot,
       initializedAt: state.initializedAt || startedAt,
       lastCheckedAt: startedAt,
-      lastNotifiedAt: startedAt,
-      lastItem: fresh[0],
-      lastResult: "notified"
+      lastNotifiedAt: immediateSent || digestSent ? startedAt : state.lastNotifiedAt,
+      lastItem: notifyList[0] || state.lastItem,
+      lastResult: result
     });
 
-    return json(200, { ok: true, result: "notified", count: fresh.length, item: fresh[0].title });
+    return json(200, {
+      ok: true,
+      result,
+      immediateCount: notifyList.length,
+      digestQueued: digestQueue.length,
+      totalItems: items.length
+    });
   } catch (error) {
     console.error(error);
     return json(500, { ok: false, error: error.message });
@@ -192,13 +231,14 @@ exports.handler = async (event = {}, context = {}) => {
 // ---------------------------------------------------------------- 収集
 
 async function collectLatest() {
-  const [sec, wireNews, speedNews, officialNews, marketNews, quantumNews, competitorSec, competitorNews] = await Promise.all([
+  const [sec, wireNews, speedNews, officialNews, marketNews, macroNews, quantumNews, competitorSec, competitorNews] = await Promise.all([
     safe(() => getSecFilings(), "sec"),
     safe(() => getWireNews(), "wire"),
     // 速報クエリ: when:1d は新着が上に来やすい
     safe(() => getGoogleNews("IonQ OR IONQ", "1d"), "speed"),
     safe(() => getGoogleNews("site:investors.ionq.com/news/news-details IonQ", "7d"), "official"),
     safe(() => getGoogleNews("IONQ OR $IONQ", "7d"), "market"),
+    safe(() => getMacroNews(), "macro"),
     safe(() => getQuantumNews(), "quantum"),
     safe(() => getCompetitorSecFilings(), "csec"),
     safe(() => getGoogleNews("(Rigetti OR RGTI OR D-Wave OR QBTS OR \"Quantum Computing Inc\" OR QUBT OR Quantinuum OR \"IBM quantum\" OR \"Google quantum\" OR \"Microsoft quantum\" OR \"AWS Braket\" OR \"NVIDIA quantum\")", "7d"), "cnews")
@@ -210,12 +250,13 @@ async function collectLatest() {
     speedNews: speedNews.value,
     officialNews: officialNews.value,
     marketNews: marketNews.value,
+    macroNews: macroNews.value,
     quantumNews: quantumNews.value,
     competitorSec: competitorSec.value,
     competitorNews: competitorNews.value,
     stats: {
       sec: sourceStat(sec), wire: sourceStat(wireNews), speed: sourceStat(speedNews),
-      official: sourceStat(officialNews), market: sourceStat(marketNews),
+      official: sourceStat(officialNews), market: sourceStat(marketNews), macro: sourceStat(macroNews),
       quantum: sourceStat(quantumNews), csec: sourceStat(competitorSec), cnews: sourceStat(competitorNews)
     }
   };
@@ -348,6 +389,28 @@ async function getGoogleNews(query, window = "7d") {
   return parseItems(xml).slice(0, GOOGLE_NEWS_LIMIT);
 }
 
+// 株アカウントとして押さえたい金融材料。ただし一般金融ニュースを無制限に
+// 混ぜず、米株全体を動かすマクロ指標か量子株の資本市場材料に限定する。
+async function getMacroNews() {
+  const queries = [
+    '("Federal Reserve" OR inflation OR CPI OR PCE OR "jobs report" OR "Treasury yields" OR recession OR tariffs) (stocks OR Nasdaq)',
+    '(IONQ OR "quantum stocks") (offering OR dilution OR "short seller" OR ETF OR institutional OR analyst)'
+  ];
+  const batches = await Promise.all(queries.map((query) => safeGetGoogleNews(query, "1d")));
+  return dedupeItems(batches.flat())
+    .filter(isImportantMacroNews)
+    .sort((a, b) => Date.parse(b.publishedAt || 0) - Date.parse(a.publishedAt || 0))
+    .slice(0, 15);
+}
+
+const MACRO_NEWS_RE = /federal reserve|\bfed\b|interest rates?|rate cut|rate hike|inflation|\bcpi\b|\bpce\b|payroll|jobs report|treasury yields?|recession|tariffs?|market selloff|stock offering|dilution|short seller|institutional investor|analyst|upgrade|downgrade|price target|\betf\b/i;
+const MARKET_CONTEXT_RE = /stocks?|nasdaq|s&p|wall street|market|ionq|quantum|growth|technology|tech/i;
+
+function isImportantMacroNews(item) {
+  const text = `${item.title || ""} ${item.source || ""}`;
+  return MACRO_NEWS_RE.test(text) && MARKET_CONTEXT_RE.test(text);
+}
+
 async function getQuantumNews() {
   const googleQueries = [
     "\"quantum computing\" OR \"quantum computer\" OR \"quantum technology\" -IONQ -$IONQ",
@@ -367,9 +430,9 @@ async function getQuantumNews() {
     .slice(0, 30);
 }
 
-async function safeGetGoogleNews(query) {
+async function safeGetGoogleNews(query, window = "7d") {
   try {
-    return await getGoogleNews(query, "7d");
+    return await getGoogleNews(query, window);
   } catch (error) {
     console.warn(`Google quantum query failed: ${error.message}`);
     return [];
@@ -458,6 +521,17 @@ function normalizeLatestItems(data) {
     publishedAt: item.publishedAt
   })));
 
+  (data.macroNews || []).forEach((item) => items.push(withId({
+    type: "MNEWS",
+    category: "macro",
+    label: "金融・マクロ",
+    title: item.title,
+    url: item.url,
+    source: item.source || "Financial News",
+    kind: "株価環境",
+    publishedAt: item.publishedAt
+  })));
+
   (data.quantumNews || []).forEach((item) => items.push(withId({
     type: "QNEWS",
     category: "quantum",
@@ -501,6 +575,9 @@ function normalizeLatestItems(data) {
     .filter((item) => item.title || item.url)
     .filter((item) => !isExcludedSource(item))
     .filter((item) => !isIrrelevantWire(item))
+    // 日時不明・未来日・8日超の記事はキャッシュへ入れない。
+    // 7日表示には1日分の取得遅延余裕を残す。
+    .filter((item) => isCollectableItemTime(item))
     .filter((item) => {
       if (seen.has(item.id)) return false;
       seen.add(item.id);
@@ -772,7 +849,7 @@ async function applyTranslations(items, deadlineAt = Date.now() + 8000) {
   // 表示対象(7日以内)を翻訳する。優先順位:
   // IONQ直結(ir/news) → SEC → 競合 → 量子業界の順。同カテゴリ内は新しい順。
   // 「優先度を日本語で判断する」用途なので、IONQに効くものから訳す。
-  const CATEGORY_PRIORITY = { ir: 0, news: 1, sec: 2, competitor: 3, quantum: 4 };
+  const CATEGORY_PRIORITY = { ir: 0, news: 1, macro: 2, sec: 3, competitor: 4, quantum: 5 };
   const windowMs = 7 * 24 * 60 * 60 * 1000;
   const targets = items.filter((item) => {
     if (item.form) return false; // SECは下の静的マップで日本語化
@@ -964,13 +1041,100 @@ function notificationReason(item, nowValue, postedIds, notifiedIds, knownIds = n
   const oldestAllowed = now - effectiveLookbackMinutes() * 60 * 1000;
   if (itemTime < oldestAllowed) return "older_than_lookback";
   if (itemTime > now + 2 * 60 * 1000) return "future_time";
-  return "will_notify";
+  if (!isNotificationWorthy(item, nowValue)) return "low_priority";
+  return isImmediateNews(item, nowValue) ? "will_notify" : "will_digest";
+}
+
+// Discordは「新しいだけ」の記事ではなく、投稿候補になる材料だけを通知する。
+// サイト上には低スコア記事も残すため、後から確認はできる。
+const MATERIAL_NEWS_RE = /earnings|revenue|guidance|quarterly|annual|contract|award|deal|order|booking|backlog|partnership|strategic|collaboration|customer|deployment|government|defense|army|navy|air force|darpa|doe|nasa|funding|financing|offering|convertible|acquisition|merger|buyout|analyst|upgrade|downgrade|price target|rating|breakthrough|logical qubit|error correction|fault tolerant|quantum advantage|commercial|production|data center|federal reserve|\bfed\b|interest rates?|rate cut|rate hike|inflation|\bcpi\b|\bpce\b|payroll|jobs report|treasury yields?|recession|tariffs?|market selloff|dilution|short seller/i;
+const LOW_VALUE_NEWS_RE = /should you buy|is .* a buy|stock price prediction|price forecast|where will .* stock|why .* stock|could .* stock|millionaire.?maker|technical analysis|unusual options|options trading|short interest|wall street thinks|top \d+ .*stocks?/i;
+const PRIMARY_SOURCE_RE = /sec edgar|ionq ir|nasdaq\/ionq|business wire|globenewswire|pr newswire|\.gov\b|darpa|department of defense|department of energy/i;
+
+function newsPriorityScore(item, nowValue = Date.now()) {
+  const text = `${item.title || ""} ${item.source || ""} ${item.label || ""} ${item.description || ""}`.toLowerCase();
+  const category = String(item.category || "").toLowerCase();
+  const directIonq = category === "ir" || category === "sec" || /\bionq\b|\$ionq/.test(text);
+  const material = MATERIAL_NEWS_RE.test(text) || isImportantSec(item);
+  let score = 0;
+
+  if (directIonq) score += 40;
+  if (material) score += 25;
+  if (PRIMARY_SOURCE_RE.test(text) || item.form) score += 20;
+  if ((category === "competitor" || category === "quantum") && material) score += 10;
+  if (category === "macro" && material) score += 15;
+  if (LOW_VALUE_NEWS_RE.test(text)) score -= 35;
+
+  const now = typeof nowValue === "number" ? nowValue : Date.parse(nowValue);
+  const itemTime = parseItemTime(item);
+  const ageHours = itemTime && Number.isFinite(now) ? (now - itemTime) / 3600000 : Infinity;
+  if (ageHours <= 2) score += 15;
+  else if (ageHours <= 6) score += 10;
+  else if (ageHours <= 24) score += 5;
+
+  return Math.max(0, Math.min(100, score));
+}
+
+function isNotificationWorthy(item, nowValue) {
+  return newsPriorityScore(item, nowValue) >= 50;
+}
+
+function isImmediateNews(item, nowValue) {
+  return newsPriorityScore(item, nowValue) >= 70;
+}
+
+function compareNewsPriority(a, b, nowValue) {
+  const scoreDiff = newsPriorityScore(b, nowValue) - newsPriorityScore(a, nowValue);
+  if (scoreDiff) return scoreDiff;
+  return (parseItemTime(b) || 0) - (parseItemTime(a) || 0);
+}
+
+function priorityReasonLabels(item) {
+  const text = `${item.title || ""} ${item.source || ""} ${item.label || ""} ${item.description || ""}`.toLowerCase();
+  const category = String(item.category || "").toLowerCase();
+  const reasons = [];
+  if (category === "ir" || category === "sec" || /\bionq\b|\$ionq/.test(text)) reasons.push("IonQ直結");
+  if (PRIMARY_SOURCE_RE.test(text) || item.form) reasons.push("一次情報");
+  if (MATERIAL_NEWS_RE.test(text) || isImportantSec(item)) reasons.push("重要材料");
+  if (category === "macro") reasons.push("市場全体");
+  return [...new Set(reasons)].slice(0, 3);
+}
+
+function mergeDigestQueue(existing, incoming, nowValue, postedIds = new Set()) {
+  const now = typeof nowValue === "number" ? nowValue : Date.parse(nowValue);
+  const queue = [];
+  [...existing, ...incoming].forEach((item) => {
+    const itemTime = parseItemTime(item);
+    if (!item || !item.id || idInSet(item, postedIds) || !itemTime) return;
+    if (Number.isFinite(now) && (now - itemTime < -FUTURE_TOLERANCE_MS || now - itemTime > 24 * 60 * 60 * 1000)) return;
+    const sameIndex = queue.findIndex((queued) => queued.id === item.id || (!item.form && !queued.form && isSimilarNews(queued, item)));
+    if (sameIndex < 0) queue.push(item);
+    else if (compareNewsPriority(item, queue[sameIndex], now) < 0) queue[sameIndex] = item;
+  });
+  return queue.sort((a, b) => compareNewsPriority(a, b, now)).slice(0, 100);
+}
+
+function currentDigestSlot(nowValue) {
+  const ms = typeof nowValue === "number" ? nowValue : Date.parse(nowValue);
+  if (!Number.isFinite(ms)) return "";
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Tokyo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(new Date(ms));
+  const values = {};
+  parts.forEach((part) => { values[part.type] = part.value; });
+  if (values.hour !== "08" && values.hour !== "20") return "";
+  return `${values.year}-${values.month}-${values.day}-${values.hour}`;
 }
 
 function effectiveLookbackMinutes() {
   const configured = Number(process.env.WATCH_LOOKBACK_MINUTES || DEFAULT_LOOKBACK_MINUTES);
   if (!Number.isFinite(configured) || configured <= 0) return DEFAULT_LOOKBACK_MINUTES;
-  return Math.max(configured, DEFAULT_LOOKBACK_MINUTES);
+  return Math.min(Math.max(configured, 30), 1440);
 }
 
 function mergeRecentIds(existingIds, newIds) {
@@ -988,13 +1152,22 @@ function parseItemTime(item) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function isCollectableItemTime(item, nowValue = Date.now()) {
+  const itemTime = parseItemTime(item);
+  const now = typeof nowValue === "number" ? nowValue : Date.parse(nowValue);
+  if (!itemTime || !Number.isFinite(now)) return false;
+  const age = now - itemTime;
+  return age >= -FUTURE_TOLERANCE_MS &&
+    age <= MAX_COLLECTION_AGE_HOURS * 60 * 60 * 1000;
+}
+
 // ---------------------------------------------------------------- 通知
 
 async function sendNotification(items, options = {}) {
   const list = Array.isArray(items) ? items : [items];
   if (!list.length) return;
   const total = options.totalCount || list.length;
-  const title = total > 1 ? `IONQ新着 ${total}件` : "IONQ新着";
+  const title = options.title || (total > 1 ? `IONQ新着 ${total}件` : "IONQ新着");
 
   if (getDiscordWebhookUrl()) {
     await sendDiscord(list, title, total);
@@ -1020,9 +1193,11 @@ async function sendDiscord(items, title, total) {
 
   const embeds = items.slice(0, MAX_NOTIFY_EMBEDS).map((item) => {
     const jst = formatJst(item.acceptedAt || item.publishedAt);
+    const reasons = priorityReasonLabels(item);
     const hasUrl = /^https?:\/\//i.test(String(item.url || ""));
     const descriptionLines = [
       item.titleJa ? truncate(item.titleJa, 200) : null,
+      reasons.length ? `📌 ${reasons.join("・")}` : null,
       item.source ? `**${item.source}**` : null,
       jst ? `🕒 ${jst}` : null
     ].filter(Boolean);

@@ -1,13 +1,13 @@
 // IONQ Watchdesk - フロント向けAPI
-// 変更点: 毎回のフル収集をやめ、watch-ionq(cron 30分おき)が書いたBlobキャッシュを返すだけにした。
+// 変更点: 毎回のフル収集をやめ、watch-ionq(cron 1時間おき)が書いたBlobキャッシュを返すだけにした。
 // - ページを何回開いてもタイムアウトしない・外部APIを叩かない・表示が一瞬で出る
-// - キャッシュが無い/古い(75分超)場合のみ、軽量ライブ収集(SEC + Nasdaqワイヤーのみ)にフォールバック
+// - キャッシュが無い/古い(150分超)場合のみ、軽量ライブ収集(SEC + Nasdaqワイヤーのみ)にフォールバック
 
 const STORE_NAME = "ionq-watchdesk";
 const CACHE_KEY = "latest-cache";
-// Cronと同じ30分では実行の数秒の遅れだけで毎回staleになるため、
+// Cronと同じ60分では実行の数秒の遅れだけで毎回staleになるため、
 // 2回分+余裕を持たせる。1回失敗しても既存一覧を維持できる。
-const CACHE_STALE_MINUTES = 75;
+const CACHE_STALE_MINUTES = 150;
 const SEC_CIK = "0001824920";
 const FETCH_TIMEOUT_MS = 6000;
 
