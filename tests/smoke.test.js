@@ -96,6 +96,14 @@ test("キャッシュは1時間Cronに余裕を持たせ、未来時刻は拒否
   assert.equal(__test.isCacheFresh({ cachedAt: new Date(Date.now() + 10 * 60 * 1000).toISOString() }), false);
 });
 
+test("ローカルプレビューからlatest APIを読めるCORS設定がある", async () => {
+  const latest = loadHelpers("netlify/functions/latest-ionq.js", ["isCacheFresh"]);
+  const response = await latest.handler({ httpMethod: "OPTIONS" });
+  assert.equal(response.statusCode, 204);
+  assert.equal(response.headers["access-control-allow-origin"], "*");
+  assert.match(response.headers["access-control-allow-methods"], /GET/);
+});
+
 test("通知は既定6時間以内に限定し、環境変数で短縮できる", () => {
   const base = loadHelpers(
     "netlify/functions/watch-ionq.js",
@@ -152,6 +160,48 @@ test("DiscordはIonQ直結の重要材料を優先し、薄い株価記事を除
   assert.deepEqual(Array.from(__test.priorityReasonLabels(contract)), ["IonQ直結", "一次情報", "重要材料"]);
 });
 
+test("投稿優先度は鮮度と分離し、時間経過だけでは変化しない", () => {
+  const { __test } = loadHelpers("netlify/functions/watch-ionq.js", [
+    "newsPriorityScore", "isImmediateNews", "isNotificationWorthy"
+  ]);
+  const important = {
+    title: "IonQ wins major government quantum computing contract",
+    source: "News Service",
+    category: "news",
+    publishedAt: "2026-07-17T11:00:00+09:00"
+  };
+  const mentionOnly = {
+    title: "IonQ mentioned in a weekly quantum stocks roundup",
+    source: "Market Blog",
+    category: "news",
+    publishedAt: "2026-07-17T11:00:00+09:00"
+  };
+  const freshScore = __test.newsPriorityScore(important, "2026-07-17T12:00:00+09:00");
+  const oldScore = __test.newsPriorityScore(important, "2026-07-20T12:00:00+09:00");
+  assert.equal(freshScore, oldScore);
+  assert.equal(__test.isImmediateNews(important, "2026-07-17T12:00:00+09:00"), true);
+  assert.equal(__test.isNotificationWorthy(mentionOnly, "2026-07-17T12:00:00+09:00"), false);
+
+  const skytUnrelated = {
+    title: "SkyWater opens a manufacturing training program",
+    source: "Nasdaq/SKYT",
+    ticker: "SKYT",
+    category: "ir",
+    publishedAt: "2026-07-17T11:00:00+09:00"
+  };
+  assert.equal(__test.isNotificationWorthy(skytUnrelated, "2026-07-17T12:00:00+09:00"), false);
+});
+
+test("AI重要度は曖昧な記事だけを補正し、明白な最優先材料を格下げしない", () => {
+  const { __test } = loadHelpers("netlify/functions/watch-ionq.js", [
+    "mergeAiPriorityScore", "parseAiPriorityResponse"
+  ]);
+  assert.equal(__test.mergeAiPriorityScore(35, 85), 65);
+  assert.equal(__test.mergeAiPriorityScore(85, 10), 85);
+  const parsed = __test.parseAiPriorityResponse('```json\n{"items":[{"id":"a","score":72,"reason":"大型契約"}]}\n```');
+  assert.deepEqual(Array.from(parsed, (item) => ({ ...item })), [{ id: "a", score: 72, reason: "大型契約" }]);
+});
+
 test("金融ニュースは米株を動かすマクロ材料だけを採用する", () => {
   const { __test } = loadHelpers("netlify/functions/watch-ionq.js", [
     "isImportantMacroNews", "newsPriorityScore", "isNotificationWorthy"
@@ -173,6 +223,28 @@ test("金融ニュースは米株を動かすマクロ材料だけを採用す�
   assert.equal(__test.isImportantMacroNews(unrelated), false);
   assert.equal(__test.isNotificationWorthy(macro, now), true);
   assert.ok(__test.newsPriorityScore(macro, now) >= 50);
+
+  const officialCpi = {
+    title: "Consumer Price Index Summary",
+    source: "BLS CPI",
+    category: "macro",
+    publishedAt: "2026-07-17T11:00:00+09:00"
+  };
+  assert.equal(__test.isImportantMacroNews(officialCpi), true);
+  assert.equal(__test.isNotificationWorthy(officialCpi, now), true);
+
+  const economicSignals = [
+    "US GDP growth beats forecasts as Nasdaq futures rise",
+    "Jobless claims jump and Wall Street stocks fall",
+    "Government shutdown fears rattle US markets",
+    "VIX spikes as technology stocks sell off",
+    "Weak Treasury auction pushes yields higher and pressures Nasdaq"
+  ];
+  economicSignals.forEach((title) => {
+    const item = { title, source: "Financial News", category: "macro", publishedAt: macro.publishedAt };
+    assert.equal(__test.isImportantMacroNews(item), true, title);
+    assert.equal(__test.isNotificationWorthy(item, now), true, title);
+  });
 });
 
 test("最重要は即通知、注目は朝夜まとめに分ける", () => {
@@ -194,12 +266,50 @@ test("最重要は即通知、注目は朝夜まとめに分ける", () => {
     category: "macro",
     publishedAt: "2026-07-17T11:00:00+09:00"
   };
+  const crisis = {
+    id: "crisis",
+    title: "VIX spikes as bank crisis triggers market selloff",
+    source: "Financial News",
+    category: "macro",
+    publishedAt: "2026-07-17T11:00:00+09:00"
+  };
   assert.equal(__test.isImmediateNews(important, now), true);
   assert.equal(__test.isImmediateNews(macro, now), false);
+  assert.equal(__test.isImmediateNews(crisis, now), true);
   assert.equal(__test.currentDigestSlot("2026-07-16T23:00:00Z"), "2026-07-17-08");
   assert.equal(__test.currentDigestSlot("2026-07-17T11:00:00Z"), "2026-07-17-20");
   assert.equal(__test.currentDigestSlot("2026-07-17T12:00:00Z"), "");
   assert.equal(__test.mergeDigestQueue([], [macro, macro], now, new Set()).length, 1);
+});
+
+test("Discord通知は6件以上でも5件単位に分割して全件を残す", () => {
+  const { __test } = loadHelpers("netlify/functions/watch-ionq.js", ["splitNotificationBatches"]);
+  const items = Array.from({ length: 12 }, (_, index) => ({ id: `item-${index}` }));
+  const batches = __test.splitNotificationBatches(items, 5);
+  assert.deepEqual(Array.from(batches, (batch) => batch.length), [5, 5, 2]);
+  assert.deepEqual(Array.from(batches.flat(), (item) => item.id), Array.from(items, (item) => item.id));
+});
+
+test("通知先が未設定なら成功扱いにせず再試行可能なままにする", async () => {
+  const { __test } = loadHelpers("netlify/functions/watch-ionq.js", ["sendNotificationBatches"]);
+  await assert.rejects(
+    __test.sendNotificationBatches([{ id: "retry", title: "IonQ contract", url: "https://example.com" }]),
+    /Notification target is not configured/
+  );
+});
+
+test("IonQ公式ニュースページをGoogle Newsなしで直接読める", () => {
+  const { __test } = loadHelpers("netlify/functions/watch-ionq.js", ["parseIonqOfficialHtml"]);
+  const html = `
+    <article><time>July 17, 2026</time><a href="/news/ionq-major-contract">
+      <span>IonQ Wins Major Government Quantum Contract</span>
+      <span>IonQ Press Release</span>
+    </a></article>`;
+  const items = __test.parseIonqOfficialHtml(html);
+  assert.equal(items.length, 1);
+  assert.equal(items[0].source, "IonQ公式");
+  assert.equal(items[0].url, "https://www.ionq.com/news/ionq-major-contract");
+  assert.match(items[0].publishedAt, /^2026-07-17/);
 });
 
 test("画面に収集元の状態と米国市場時間帯を表示する", () => {

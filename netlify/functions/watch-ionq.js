@@ -29,11 +29,20 @@ const QUANTUM_RSS_FEEDS = [
   { source: "HPCwire", url: "https://www.hpcwire.com/feed/" }
 ];
 
+// Google Newsより先に確認する米国政府の一次情報。
+const OFFICIAL_MACRO_FEEDS = [
+  { source: "Federal Reserve", url: "https://www.federalreserve.gov/feeds/press_monetary.xml" },
+  { source: "BLS", url: "https://www.bls.gov/feed/bls_latest.rss" },
+  { source: "BLS CPI", url: "https://www.bls.gov/feed/cpi.rss" },
+  { source: "BEA", url: "https://apps.bea.gov/rss/rss.xml" }
+];
+
 const STORE_NAME = "ionq-watchdesk";
 const STATE_KEY = "watch-state";
 const POSTED_KEY = "posted-state";
 const CACHE_KEY = "latest-cache";
 const TRANSLATE_KEY = "translate-cache";
+const AI_PRIORITY_KEY = "priority-ai-cache";
 const GOOGLE_NEWS_LIMIT = 25;
 const MAX_TRANSLATE_PER_RUN = 30;
 const TRANSLATE_CONCURRENCY = 6;
@@ -49,11 +58,11 @@ const SITE_URL = (process.env.WATCHDESK_URL || WATCHDESK_FALLBACK_URL).trim() ||
 
 exports.handler = async (event = {}, context = {}) => {
   const startedAt = new Date().toISOString();
-  // 関数タイムアウト(10秒)の1.5秒前を翻訳の締切にする。
-  // 締切が来たら翻訳を打ち切り、残りは次回実行(1時間後)がキャッシュ済み分に追加していく。
+  // 関数タイムアウト(10秒)の3秒前をAI・翻訳の締切にする。
+  // 残り時間はキャッシュ保存と複数便のDiscord通知へ確保する。
   const deadlineAt = typeof context.getRemainingTimeInMillis === "function"
-    ? Date.now() + context.getRemainingTimeInMillis() - 1500
-    : Date.now() + 8000;
+    ? Date.now() + context.getRemainingTimeInMillis() - 3000
+    : Date.now() + 6500;
 
   try {
     await connectBlobs(event);
@@ -75,6 +84,10 @@ exports.handler = async (event = {}, context = {}) => {
 
     // 上書き前に前回キャッシュを確保(類似記事の再通知抑制に使う)
     const previousItems = await readCacheItems();
+
+    // キーワードだけでは判断しにくい記事を、API設定時のみ1バッチで意味判定する。
+    // 1.6秒で打ち切り、失敗時は従来スコアへそのままフォールバックする。
+    items = await applyAiPriority(items, Math.min(deadlineAt, Date.now() + 1600));
 
     // 翻訳前に一度キャッシュを書く(翻訳中にタイムアウトしても表示は生きる)
     await writeCache({ updatedAt: startedAt, cachedAt: startedAt, items, sourceStats: collected.stats });
@@ -180,7 +193,7 @@ exports.handler = async (event = {}, context = {}) => {
     let lastDigestSlot = state.lastDigestSlot || "";
 
     if (notifyList.length) {
-      await sendNotification(notifyList.slice(0, MAX_NOTIFY_EMBEDS), { totalCount: notifyList.length });
+      await sendNotificationBatches(notifyList, { title: "IONQ最優先ニュース" });
       immediateSent = true;
       // 抑制した類似分も通知済み扱いにして、以後の再浮上を防ぐ。
       immediateFresh.forEach((entry) => notifiedIds.add(entry.id));
@@ -189,8 +202,7 @@ exports.handler = async (event = {}, context = {}) => {
     const digestSlot = currentDigestSlot(startedAt);
     if (digestSlot && digestSlot !== lastDigestSlot && digestQueue.length) {
       const digestList = digestQueue.slice().sort((a, b) => compareNewsPriority(a, b, startedAt));
-      await sendNotification(digestList.slice(0, MAX_NOTIFY_EMBEDS), {
-        totalCount: digestList.length,
+      await sendNotificationBatches(digestList, {
         title: digestSlot.endsWith("-08") ? "IONQ注目ニュース 朝まとめ" : "IONQ注目ニュース 夜まとめ"
       });
       digestList.forEach((entry) => notifiedIds.add(entry.id));
@@ -236,7 +248,7 @@ async function collectLatest() {
     safe(() => getWireNews(), "wire"),
     // 速報クエリ: when:1d は新着が上に来やすい
     safe(() => getGoogleNews("IonQ OR IONQ", "1d"), "speed"),
-    safe(() => getGoogleNews("site:investors.ionq.com/news/news-details IonQ", "7d"), "official"),
+    safe(() => getOfficialIonqNews(), "official"),
     safe(() => getGoogleNews("IONQ OR $IONQ", "7d"), "market"),
     safe(() => getMacroNews(), "macro"),
     safe(() => getQuantumNews(), "quantum"),
@@ -389,25 +401,95 @@ async function getGoogleNews(query, window = "7d") {
   return parseItems(xml).slice(0, GOOGLE_NEWS_LIMIT);
 }
 
+// IonQ公式ページを直接確認し、取得できない項目だけGoogle Newsで補完する。
+async function getOfficialIonqNews() {
+  const [direct, indexed] = await Promise.all([
+    getIonqNewsPage().catch((error) => {
+      console.warn(`IonQ direct news failed: ${error.message}`);
+      return [];
+    }),
+    safeGetGoogleNews("site:investors.ionq.com/news/news-details IonQ", "7d")
+  ]);
+  return dedupeItems([...direct, ...indexed])
+    .sort((a, b) => Date.parse(b.publishedAt || 0) - Date.parse(a.publishedAt || 0))
+    .slice(0, 25);
+}
+
+async function getIonqNewsPage() {
+  const response = await fetchWithTimeout("https://www.ionq.com/news", {
+    headers: {
+      "User-Agent": "Mozilla/5.0 IONQ-Watchdesk/1.0",
+      "Accept": "text/html,application/xhtml+xml"
+    }
+  });
+  if (!response.ok) throw new Error(`official_${response.status}`);
+  return parseIonqOfficialHtml(await response.text());
+}
+
+function parseIonqOfficialHtml(html) {
+  const sourceHtml = String(html || "");
+  const output = [];
+  const anchorRe = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let match;
+  while ((match = anchorRe.exec(sourceHtml))) {
+    const href = cleanXml(match[1]);
+    const context = sourceHtml.slice(Math.max(0, match.index - 260), anchorRe.lastIndex + 260);
+    const officialHref = /investors\.ionq\.com\/news\/news-details|^\/news\/[^?#]+|^https?:\/\/(?:www\.)?ionq\.com\/news\/[^?#]+/i.test(href);
+    const labeledPressRelease = /ionq press release/i.test(match[2]);
+    if (!officialHref && !labeledPressRelease) continue;
+    const title = stripHtml(match[2])
+      .replace(/\bIonQ Press Release\b/gi, "")
+      .replace(/\bRead More\b/gi, "")
+      .replace(/\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}\b/gi, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (title.length < 18 || !href || href === "#") continue;
+    const dateText = (context.match(/\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}\b/i) || [])[0] || "";
+    const publishedAt = dateText ? new Date(`${dateText} 12:00:00 UTC`).toISOString() : "";
+    if (!publishedAt) continue;
+    let url;
+    try {
+      url = new URL(href, "https://www.ionq.com/news").toString();
+    } catch (error) {
+      continue;
+    }
+    output.push({ title, url, publishedAt, source: "IonQ公式" });
+  }
+  return dedupeItems(output);
+}
+
+function stripHtml(value) {
+  return cleanXml(String(value || "").replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
+}
+
 // 株アカウントとして押さえたい金融材料。ただし一般金融ニュースを無制限に
 // 混ぜず、米株全体を動かすマクロ指標か量子株の資本市場材料に限定する。
 async function getMacroNews() {
   const queries = [
-    '("Federal Reserve" OR inflation OR CPI OR PCE OR "jobs report" OR "Treasury yields" OR recession OR tariffs) (stocks OR Nasdaq)',
+    '("Federal Reserve" OR FOMC OR Powell OR inflation OR CPI OR PCE OR GDP OR payrolls OR "jobless claims" OR "retail sales" OR ISM OR PMI) (stocks OR Nasdaq OR "Wall Street")',
+    '("Treasury yields" OR "Treasury auction" OR "debt ceiling" OR "government shutdown" OR recession OR tariffs OR sanctions OR "oil prices" OR VIX OR "credit spreads" OR "bank crisis") (stocks OR Nasdaq OR "Wall Street" OR markets)',
     '(IONQ OR "quantum stocks") (offering OR dilution OR "short seller" OR ETF OR institutional OR analyst)'
   ];
-  const batches = await Promise.all(queries.map((query) => safeGetGoogleNews(query, "1d")));
-  return dedupeItems(batches.flat())
+  const [newsBatches, officialBatches] = await Promise.all([
+    Promise.all(queries.map((query) => safeGetGoogleNews(query, "1d"))),
+    Promise.all(OFFICIAL_MACRO_FEEDS.map((feed) => safeGetFeed(feed)))
+  ]);
+  return dedupeItems([...officialBatches.flat(), ...newsBatches.flat()])
     .filter(isImportantMacroNews)
     .sort((a, b) => Date.parse(b.publishedAt || 0) - Date.parse(a.publishedAt || 0))
     .slice(0, 15);
 }
 
-const MACRO_NEWS_RE = /federal reserve|\bfed\b|interest rates?|rate cut|rate hike|inflation|\bcpi\b|\bpce\b|payroll|jobs report|treasury yields?|recession|tariffs?|market selloff|stock offering|dilution|short seller|institutional investor|analyst|upgrade|downgrade|price target|\betf\b/i;
+const MACRO_NEWS_RE = /federal reserve|\bfed\b|\bfomc\b|\bpowell\b|interest rates?|rate cut|rate hike|quantitative easing|quantitative tightening|balance sheet|inflation|\bcpi\b|\bpce\b|\bgdp\b|payrolls?|jobs report|jobless claims|unemployment|retail sales|\bism\b|\bpmi\b|consumer confidence|treasury yields?|treasury auction|debt ceiling|government shutdown|recession|tariffs?|sanctions?|oil prices?|crude oil|\bvix\b|volatility index|credit spreads?|bank (?:crisis|failure)|liquidity crisis|market selloff|stock offering|dilution|short seller|institutional investor|analyst|upgrade|downgrade|price target|\betf\b/i;
 const MARKET_CONTEXT_RE = /stocks?|nasdaq|s&p|wall street|market|ionq|quantum|growth|technology|tech/i;
+const OFFICIAL_MACRO_SOURCE_RE = /federal reserve|\bbls\b|bureau of labor statistics|\bbea\b|bureau of economic analysis/i;
+const OFFICIAL_MACRO_RELEASE_RE = /monetary policy|fomc|consumer price index|producer price index|employment situation|job openings|employment cost|gross domestic product|personal income and outlays|\bcpi\b|\bpce\b|\bgdp\b/i;
 
 function isImportantMacroNews(item) {
   const text = `${item.title || ""} ${item.source || ""}`;
+  if (OFFICIAL_MACRO_SOURCE_RE.test(item.source || "")) {
+    return OFFICIAL_MACRO_RELEASE_RE.test(text) || MACRO_NEWS_RE.test(text);
+  }
   return MACRO_NEWS_RE.test(text) && MARKET_CONTEXT_RE.test(text);
 }
 
@@ -834,6 +916,101 @@ function isQuantumRelevant(item) {
   return /quantum|qubit|qubits|ion trap|trapped ion|superconducting|photonic|annealing|qpu|qiskit|braket|cuda-q|quantinuum|rigetti|d-wave|pasqal|quera|atom computing|alice & bob|xanadu|institutional investor|hedge fund|asset manager|etf|holdings|stake|portfolio|analyst|price target|upgrade|downgrade|rating/.test(text);
 }
 
+// ---------------------------------------------------------------- 任意のAI重要度判定(結果キャッシュ付き)
+
+async function applyAiPriority(items, deadlineAt) {
+  const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
+  if (!apiKey || process.env.AI_PRIORITY_ENABLED === "false" || Date.now() >= deadlineAt) return items;
+
+  let cache = {};
+  try {
+    const raw = await (await openStore()).get(AI_PRIORITY_KEY);
+    cache = raw ? JSON.parse(raw) : {};
+  } catch (error) {
+    console.warn(`AI priority cache read failed: ${error.message}`);
+  }
+
+  const now = Date.now();
+  const pending = items.filter((item) => {
+    if (!item.id || cache[item.id]) return false;
+    const score = heuristicPriorityScore(item);
+    const time = parseItemTime(item);
+    return score >= 20 && score < 70 && time && now - time <= 24 * 60 * 60 * 1000;
+  }).slice(0, 8);
+
+  if (pending.length && Date.now() < deadlineAt) {
+    try {
+      const timeoutMs = Math.max(500, Math.min(1500, deadlineAt - Date.now()));
+      const response = await fetchWithTimeout("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "authorization": `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          model: String(process.env.PRIORITY_AI_MODEL || process.env.REPORT_MODEL || "gpt-4o-mini").trim(),
+          temperature: 0.1,
+          max_tokens: 700,
+          response_format: { type: "json_object" },
+          messages: [
+            {
+              role: "system",
+              content: "You classify news importance for an IonQ shareholder news desk. Return JSON only: {\"items\":[{\"id\":\"...\",\"score\":0-100,\"reason\":\"short Japanese reason\"}]}. Score 70+ only for must-know IonQ company events or exceptional market crises; 50-69 for meaningful IonQ, competitor, quantum-policy, or US-market catalysts; below 50 for commentary, predictions, vague mentions, and low-information articles. Judge substance, not freshness or bullishness. Do not invent facts beyond the supplied title/source."
+            },
+            {
+              role: "user",
+              content: JSON.stringify(pending.map((item) => ({
+                id: item.id,
+                title: item.title,
+                source: item.source,
+                category: item.category,
+                heuristicScore: heuristicPriorityScore(item)
+              })))
+            }
+          ]
+        })
+      }, timeoutMs);
+      if (!response.ok) throw new Error(`openai_${response.status}`);
+      const payload = await response.json();
+      const content = String(payload?.choices?.[0]?.message?.content || "");
+      parseAiPriorityResponse(content).forEach((entry) => {
+        if (!pending.some((item) => item.id === entry.id)) return;
+        cache[entry.id] = { score: entry.score, reason: entry.reason, at: new Date().toISOString() };
+      });
+      const keys = Object.keys(cache);
+      if (keys.length > 800) {
+        const trimmed = {};
+        keys.slice(-600).forEach((key) => { trimmed[key] = cache[key]; });
+        cache = trimmed;
+      }
+      await (await openStore()).set(AI_PRIORITY_KEY, JSON.stringify(cache));
+    } catch (error) {
+      console.warn(`AI priority fallback: ${error.message}`);
+    }
+  }
+
+  return items.map((item) => {
+    const result = cache[item.id];
+    return result && Number.isFinite(Number(result.score))
+      ? { ...item, aiPriorityScore: Number(result.score), aiPriorityReason: String(result.reason || "") }
+      : item;
+  });
+}
+
+function parseAiPriorityResponse(content) {
+  try {
+    const cleaned = String(content || "").replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+    const parsed = JSON.parse(cleaned);
+    return (Array.isArray(parsed.items) ? parsed.items : []).map((entry) => ({
+      id: String(entry.id || ""),
+      score: Math.max(0, Math.min(100, Math.round(Number(entry.score)))),
+      reason: String(entry.reason || "").slice(0, 40)
+    })).filter((entry) => entry.id && Number.isFinite(entry.score));
+  } catch (error) {
+    return [];
+  }
+}
+
 // ---------------------------------------------------------------- 翻訳(Blobキャッシュ付き)
 
 async function applyTranslations(items, deadlineAt = Date.now() + 8000) {
@@ -1045,34 +1222,45 @@ function notificationReason(item, nowValue, postedIds, notifiedIds, knownIds = n
   return isImmediateNews(item, nowValue) ? "will_notify" : "will_digest";
 }
 
-// Discordは「新しいだけ」の記事ではなく、投稿候補になる材料だけを通知する。
-// サイト上には低スコア記事も残すため、後から確認はできる。
-const MATERIAL_NEWS_RE = /earnings|revenue|guidance|quarterly|annual|contract|award|deal|order|booking|backlog|partnership|strategic|collaboration|customer|deployment|government|defense|army|navy|air force|darpa|doe|nasa|funding|financing|offering|convertible|acquisition|merger|buyout|analyst|upgrade|downgrade|price target|rating|breakthrough|logical qubit|error correction|fault tolerant|quantum advantage|commercial|production|data center|federal reserve|\bfed\b|interest rates?|rate cut|rate hike|inflation|\bcpi\b|\bpce\b|payroll|jobs report|treasury yields?|recession|tariffs?|market selloff|dilution|short seller/i;
+// 優先度は記事そのものの重要性だけで決める。鮮度は通知対象期間と並び順で別管理する。
+// これにより、同じ記事が時間経過だけで「最優先」から「検討」へ落ちることを防ぐ。
+const HIGH_IMPACT_NEWS_RE = /earnings|revenue|guidance|quarterly results?|annual results?|contract|award|order|bookings?|backlog|multi[ -]year|definitive agreement|\$\s?\d[\d,.]*\s?(?:million|billion)|\d[\d,.]*\s?(?:million|billion) dollars|funding|financing|raises?|raised|offering|convertible|acquisition|merger|buyout|dilution|analyst|upgrade|downgrade|price target|rating|breakthrough|logical qubit|error correction|fault[ -]tolerant|quantum advantage|legislation|appropriation|government budget|executive order|national strategy|export controls?|federal reserve|\bfed\b|\bfomc\b|\bpowell\b|interest rates?|rate cut|rate hike|quantitative easing|quantitative tightening|inflation|consumer price index|producer price index|employment situation|job openings|gross domestic product|personal income and outlays|\bcpi\b|\bpce\b|\bgdp\b|payrolls?|jobs report|jobless claims|unemployment|retail sales|\bism\b|\bpmi\b|consumer confidence|treasury yields?|treasury auction|debt ceiling|government shutdown|recession|tariffs?|sanctions?|oil prices?|crude oil|\bvix\b|volatility index|credit spreads?|bank (?:crisis|failure)|liquidity crisis|market selloff|short seller/i;
+const MATERIAL_NEWS_RE = /deal|partnership|strategic|collaboration|customer|deployment|government|defense|army|navy|air force|darpa|doe|nasa|commercial|production|data center|investment|stake/i;
+const CRITICAL_MACRO_RE = /emergency rate cut|emergency rate hike|market crash|market selloff|bank (?:crisis|failure|collapse)|liquidity crisis|debt default|government shutdown begins|trading halt|vix (?:spikes?|surges?)/i;
 const LOW_VALUE_NEWS_RE = /should you buy|is .* a buy|stock price prediction|price forecast|where will .* stock|why .* stock|could .* stock|millionaire.?maker|technical analysis|unusual options|options trading|short interest|wall street thinks|top \d+ .*stocks?/i;
-const PRIMARY_SOURCE_RE = /sec edgar|ionq ir|nasdaq\/ionq|business wire|globenewswire|pr newswire|\.gov\b|darpa|department of defense|department of energy/i;
+const PRIMARY_SOURCE_RE = /sec edgar|ionq ir|ionq公式|nasdaq\/ionq|business wire|globenewswire|pr newswire|\.gov\b|darpa|department of defense|department of energy|federal reserve|\bbls\b|bureau of labor statistics|\bbea\b|bureau of economic analysis/i;
 
-function newsPriorityScore(item, nowValue = Date.now()) {
+function heuristicPriorityScore(item) {
   const text = `${item.title || ""} ${item.source || ""} ${item.label || ""} ${item.description || ""}`.toLowerCase();
   const category = String(item.category || "").toLowerCase();
-  const directIonq = category === "ir" || category === "sec" || /\bionq\b|\$ionq/.test(text);
-  const material = MATERIAL_NEWS_RE.test(text) || isImportantSec(item);
+  const directIonq = category === "sec" || String(item.ticker || "").toUpperCase() === "IONQ" || /\bionq\b|\$ionq|ionq公式|ionq ir|nasdaq\/ionq/.test(text);
+  const highImpact = HIGH_IMPACT_NEWS_RE.test(text) || isImportantSec(item);
+  const material = highImpact || MATERIAL_NEWS_RE.test(text);
   let score = 0;
 
-  if (directIonq) score += 40;
-  if (material) score += 25;
-  if (PRIMARY_SOURCE_RE.test(text) || item.form) score += 20;
-  if ((category === "competitor" || category === "quantum") && material) score += 10;
+  if (directIonq) score += 35;
+  if (highImpact) score += 35;
+  else if (material) score += 20;
+  if (PRIMARY_SOURCE_RE.test(text) || item.form) score += 15;
+  if ((category === "competitor" || category === "quantum") && material) score += 15;
   if (category === "macro" && material) score += 15;
-  if (LOW_VALUE_NEWS_RE.test(text)) score -= 35;
-
-  const now = typeof nowValue === "number" ? nowValue : Date.parse(nowValue);
-  const itemTime = parseItemTime(item);
-  const ageHours = itemTime && Number.isFinite(now) ? (now - itemTime) / 3600000 : Infinity;
-  if (ageHours <= 2) score += 15;
-  else if (ageHours <= 6) score += 10;
-  else if (ageHours <= 24) score += 5;
+  if (category === "macro" && CRITICAL_MACRO_RE.test(text)) score += 20;
+  if (LOW_VALUE_NEWS_RE.test(text)) score -= 40;
 
   return Math.max(0, Math.min(100, score));
+}
+
+function mergeAiPriorityScore(baseScore, aiScore) {
+  const base = Number(baseScore);
+  const ai = Number(aiScore);
+  if (!Number.isFinite(ai) || ai < 0 || ai > 100) return base;
+  // 決算・重要SECなど明白な最優先材料はAIの短いタイトル判断で格下げしない。
+  if (base >= 70) return base;
+  return Math.max(0, Math.min(100, Math.round(base * 0.4 + ai * 0.6)));
+}
+
+function newsPriorityScore(item, nowValue = Date.now()) {
+  return mergeAiPriorityScore(heuristicPriorityScore(item), item.aiPriorityScore);
 }
 
 function isNotificationWorthy(item, nowValue) {
@@ -1093,10 +1281,12 @@ function priorityReasonLabels(item) {
   const text = `${item.title || ""} ${item.source || ""} ${item.label || ""} ${item.description || ""}`.toLowerCase();
   const category = String(item.category || "").toLowerCase();
   const reasons = [];
-  if (category === "ir" || category === "sec" || /\bionq\b|\$ionq/.test(text)) reasons.push("IonQ直結");
+  if (category === "sec" || String(item.ticker || "").toUpperCase() === "IONQ" || /\bionq\b|\$ionq|ionq公式|ionq ir|nasdaq\/ionq/.test(text)) reasons.push("IonQ直結");
   if (PRIMARY_SOURCE_RE.test(text) || item.form) reasons.push("一次情報");
-  if (MATERIAL_NEWS_RE.test(text) || isImportantSec(item)) reasons.push("重要材料");
+  if (HIGH_IMPACT_NEWS_RE.test(text) || isImportantSec(item)) reasons.push("重要材料");
+  else if (MATERIAL_NEWS_RE.test(text)) reasons.push("関連材料");
   if (category === "macro") reasons.push("市場全体");
+  if (Number.isFinite(Number(item.aiPriorityScore))) reasons.push("AI確認済み");
   return [...new Set(reasons)].slice(0, 3);
 }
 
@@ -1171,20 +1361,45 @@ async function sendNotification(items, options = {}) {
 
   if (getDiscordWebhookUrl()) {
     await sendDiscord(list, title, total);
-    return;
+    return true;
   }
 
   if (process.env.PUSHOVER_USER_KEY && process.env.PUSHOVER_APP_TOKEN) {
     const first = list[0];
     const message = `${title}\n${first.title}\n${first.source || ""} ${first.publishedAt || ""}\n${first.url}`;
     await sendPushover(title, message, first.url);
-    return;
+    return true;
   }
 
   if (options.requireTarget) {
     throw new Error("Notification target is not configured. Set DISCORD_WEBHOOK_URL in Netlify environment variables.");
   }
   console.log("No notification target configured.");
+  return false;
+}
+
+// Discord embed上限に合わせて5件ずつ送り、6件目以降も捨てない。
+async function sendNotificationBatches(items, options = {}) {
+  const batches = splitNotificationBatches(items, MAX_NOTIFY_EMBEDS);
+  for (let index = 0; index < batches.length; index += 1) {
+    const suffix = batches.length > 1 ? ` (${index + 1}/${batches.length})` : "";
+    const sent = await sendNotification(batches[index], {
+      ...options,
+      title: `${options.title || "IONQ新着"}${suffix}`,
+      totalCount: batches[index].length
+    });
+    if (!sent) throw new Error("Notification target is not configured; items were kept unnotified for retry.");
+  }
+}
+
+function splitNotificationBatches(items, size = MAX_NOTIFY_EMBEDS) {
+  const list = Array.isArray(items) ? items : [];
+  const batchSize = Math.max(1, Number(size) || MAX_NOTIFY_EMBEDS);
+  const batches = [];
+  for (let index = 0; index < list.length; index += batchSize) {
+    batches.push(list.slice(index, index + batchSize));
+  }
+  return batches;
 }
 
 async function sendDiscord(items, title, total) {

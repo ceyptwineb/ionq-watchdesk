@@ -17,6 +17,7 @@ const WIRE_FEEDS = [
 ];
 
 exports.handler = async (event = {}) => {
+  if (event.httpMethod === "OPTIONS") return json(204, "");
   try {
     await connectBlobs(event);
 
@@ -361,7 +362,10 @@ function json(statusCode, body) {
     statusCode,
     headers: {
       "content-type": "application/json; charset=utf-8",
-      "cache-control": "no-store"
+      "cache-control": "no-store",
+      "access-control-allow-origin": "*",
+      "access-control-allow-methods": "GET, OPTIONS",
+      "access-control-allow-headers": "content-type"
     },
     body: JSON.stringify(body)
   };
