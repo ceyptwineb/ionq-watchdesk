@@ -26,9 +26,9 @@ function loadHelpers(relativePath, names, env = {}) {
   return module.exports;
 }
 
-test("Cronは30分間隔", () => {
+test("Cronは1時間間隔", () => {
   const config = fs.readFileSync(path.join(ROOT, "netlify.toml"), "utf8");
-  assert.match(config, /schedule\s*=\s*"\*\/30 \* \* \* \*"/);
+  assert.match(config, /schedule\s*=\s*"0 \* \* \* \*"/);
 });
 
 test("公開URLは現在のNetlifyサイトに統一されている", () => {
@@ -55,13 +55,22 @@ test("初期表示期間は説明どおり48時間", () => {
   assert.match(html, /id="age48" class="primary"/);
 });
 
-test("PC表示では3段のツールバー後にニュース一覧を配置する", () => {
+test("PC表示ではヘッダーと2カラムの作業画面を配置する", () => {
   const html = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
   assert.match(
     html,
-    /\.main\s*\{[^}]*grid-template-rows:\s*auto auto auto minmax\(0, 1fr\);/s
+    /\.app\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(330px, 390px\);/s
   );
+  assert.match(html, /\.main\s*\{[^}]*grid-template-rows:\s*auto minmax\(0, 1fr\);/s);
+  assert.match(html, /class="toolbar-row"/);
   assert.match(html, /\.age-tabs\s*\{[^}]*flex-wrap:\s*wrap;/s);
+});
+
+test("検索・フィルター後は表示中の記事へ詳細を同期する", () => {
+  const html = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
+  assert.match(html, /const selectionVisible = items\.some/);
+  assert.match(html, /if \(!selectionVisible && items\.length\) \{\s*selectItem\(items\[0\]\.id\);/s);
+  assert.match(html, /表示対象の記事がありません/);
 });
 
 test("古いキャッシュと軽量収集をIDでマージする", () => {
@@ -80,11 +89,133 @@ test("古いキャッシュと軽量収集をIDでマージする", () => {
   assert.equal(result[1].titleJa, "保存済み訳");
 });
 
-test("キャッシュは30分Cronに余裕を持たせ、未来時刻は拒否する", () => {
+test("キャッシュは1時間Cronに余裕を持たせ、未来時刻は拒否する", () => {
   const { __test } = loadHelpers("netlify/functions/latest-ionq.js", ["isCacheFresh"]);
-  assert.equal(__test.isCacheFresh({ cachedAt: new Date(Date.now() - 70 * 60 * 1000).toISOString() }), true);
-  assert.equal(__test.isCacheFresh({ cachedAt: new Date(Date.now() - 80 * 60 * 1000).toISOString() }), false);
+  assert.equal(__test.isCacheFresh({ cachedAt: new Date(Date.now() - 130 * 60 * 1000).toISOString() }), true);
+  assert.equal(__test.isCacheFresh({ cachedAt: new Date(Date.now() - 160 * 60 * 1000).toISOString() }), false);
   assert.equal(__test.isCacheFresh({ cachedAt: new Date(Date.now() + 10 * 60 * 1000).toISOString() }), false);
+});
+
+test("通知は既定6時間以内に限定し、環境変数で短縮できる", () => {
+  const base = loadHelpers(
+    "netlify/functions/watch-ionq.js",
+    ["effectiveLookbackMinutes", "shouldNotifyByTime"]
+  ).__test;
+  assert.equal(base.effectiveLookbackMinutes(), 360);
+
+  const shortened = loadHelpers(
+    "netlify/functions/watch-ionq.js",
+    ["effectiveLookbackMinutes"],
+    { WATCH_LOOKBACK_MINUTES: "90" }
+  ).__test;
+  assert.equal(shortened.effectiveLookbackMinutes(), 90);
+
+  const now = "2026-07-17T12:00:00+09:00";
+  assert.equal(base.shouldNotifyByTime({ publishedAt: "2026-07-17T07:00:00+09:00" }, now), true);
+  assert.equal(base.shouldNotifyByTime({ publishedAt: "2026-07-17T05:00:00+09:00" }, now), false);
+  assert.equal(base.shouldNotifyByTime({ publishedAt: "" }, now), false);
+});
+
+test("収集時に日時不明・未来日・8日超の記事を除外する", () => {
+  const { __test } = loadHelpers(
+    "netlify/functions/watch-ionq.js",
+    ["isCollectableItemTime"]
+  );
+  const now = Date.parse("2026-07-17T12:00:00+09:00");
+  assert.equal(__test.isCollectableItemTime({ publishedAt: "2026-07-17T11:00:00+09:00" }, now), true);
+  assert.equal(__test.isCollectableItemTime({ publishedAt: "2026-07-08T11:00:00+09:00" }, now), false);
+  assert.equal(__test.isCollectableItemTime({ publishedAt: "2026-07-17T12:10:00+09:00" }, now), false);
+  assert.equal(__test.isCollectableItemTime({ publishedAt: "" }, now), false);
+});
+
+test("DiscordはIonQ直結の重要材料を優先し、薄い株価記事を除外する", () => {
+  const { __test } = loadHelpers("netlify/functions/watch-ionq.js", [
+    "newsPriorityScore", "isNotificationWorthy", "compareNewsPriority", "priorityReasonLabels"
+  ]);
+  const now = "2026-07-17T12:00:00+09:00";
+  const contract = {
+    title: "IonQ wins major government quantum computing contract",
+    source: "IonQ IR",
+    category: "ir",
+    publishedAt: "2026-07-17T11:00:00+09:00"
+  };
+  const fluff = {
+    title: "Should You Buy IonQ Stock Today? Price Prediction",
+    source: "Market Blog",
+    category: "news",
+    publishedAt: "2026-07-17T11:30:00+09:00"
+  };
+  assert.equal(__test.isNotificationWorthy(contract, now), true);
+  assert.equal(__test.isNotificationWorthy(fluff, now), false);
+  assert.ok(__test.newsPriorityScore(contract, now) > __test.newsPriorityScore(fluff, now));
+  assert.ok(__test.compareNewsPriority(contract, fluff, now) < 0);
+  assert.deepEqual(Array.from(__test.priorityReasonLabels(contract)), ["IonQ直結", "一次情報", "重要材料"]);
+});
+
+test("金融ニュースは米株を動かすマクロ材料だけを採用する", () => {
+  const { __test } = loadHelpers("netlify/functions/watch-ionq.js", [
+    "isImportantMacroNews", "newsPriorityScore", "isNotificationWorthy"
+  ]);
+  const now = "2026-07-17T12:00:00+09:00";
+  const macro = {
+    title: "Federal Reserve rate cut lifts Nasdaq technology stocks",
+    source: "Financial News",
+    category: "macro",
+    publishedAt: "2026-07-17T11:00:00+09:00"
+  };
+  const unrelated = {
+    title: "Local bank opens a new branch downtown",
+    source: "Local News",
+    category: "macro",
+    publishedAt: "2026-07-17T11:00:00+09:00"
+  };
+  assert.equal(__test.isImportantMacroNews(macro), true);
+  assert.equal(__test.isImportantMacroNews(unrelated), false);
+  assert.equal(__test.isNotificationWorthy(macro, now), true);
+  assert.ok(__test.newsPriorityScore(macro, now) >= 50);
+});
+
+test("最重要は即通知、注目は朝夜まとめに分ける", () => {
+  const { __test } = loadHelpers("netlify/functions/watch-ionq.js", [
+    "isImmediateNews", "currentDigestSlot", "mergeDigestQueue"
+  ]);
+  const now = "2026-07-17T12:00:00+09:00";
+  const important = {
+    id: "important",
+    title: "IonQ announces major government contract",
+    source: "IonQ IR",
+    category: "ir",
+    publishedAt: "2026-07-17T11:00:00+09:00"
+  };
+  const macro = {
+    id: "macro",
+    title: "Federal Reserve rate cut lifts Nasdaq stocks",
+    source: "Financial News",
+    category: "macro",
+    publishedAt: "2026-07-17T11:00:00+09:00"
+  };
+  assert.equal(__test.isImmediateNews(important, now), true);
+  assert.equal(__test.isImmediateNews(macro, now), false);
+  assert.equal(__test.currentDigestSlot("2026-07-16T23:00:00Z"), "2026-07-17-08");
+  assert.equal(__test.currentDigestSlot("2026-07-17T11:00:00Z"), "2026-07-17-20");
+  assert.equal(__test.currentDigestSlot("2026-07-17T12:00:00Z"), "");
+  assert.equal(__test.mergeDigestQueue([], [macro, macro], now, new Set()).length, 1);
+});
+
+test("画面に収集元の状態と米国市場時間帯を表示する", () => {
+  const html = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
+  assert.match(html, /id="sources">収集 --/);
+  assert.match(html, /function renderSourceHealth/);
+  assert.match(html, /function marketSessionLabel/);
+  assert.match(html, /米プレ/);
+  assert.match(html, /米市場中/);
+  assert.match(html, /米アフター/);
+});
+
+test("画面では日時不明の記事を新着扱いしない", () => {
+  const html = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
+  assert.match(html, /function isFreshItem[\s\S]*if \(!Number\.isFinite\(ms\)\) return false;/);
+  assert.match(html, /age >= -5 \* 60 \* 1000/);
 });
 
 test("Jina Reader URLは元URLを一度だけ連結する", () => {

@@ -4,10 +4,10 @@
 [functions]
   directory = "netlify/functions"
 
-# 通知チェックは30分おき（月間約1,440回）。
-# 5分おきと比べて実行回数とFunctions Computeを約6分の1に抑える。
+# 通知チェックは1時間おき（月間約720回）。
+# 30分おきから半減し、重要速報と朝夜まとめの鮮度は維持する。
 [functions."watch-ionq"]
-  schedule = "*/30 * * * *"
+  schedule = "0 * * * *"
 
 [[headers]]
   for = "/*"

@@ -29,6 +29,7 @@
       font-family: "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
       font-size: 14px;
       line-height: 1.55;
+      overflow: hidden;
     }
 
     button, input, textarea { font: inherit; }
@@ -54,42 +55,59 @@
     a:hover { text-decoration: underline; }
 
     .app {
-      min-height: 100vh;
+      height: 100vh;
       display: grid;
-      grid-template-columns: 230px minmax(420px, 1fr) 380px;
+      grid-template-columns: minmax(0, 1fr) minmax(330px, 390px);
+      grid-template-rows: auto minmax(0, 1fr);
+      grid-template-areas:
+        "header header"
+        "feed detail";
     }
 
     .side {
-      border-right: 1px solid var(--line);
-      background: var(--panel-2);
-      padding: 14px;
-      display: grid;
-      align-content: start;
-      gap: 14px;
-      min-height: 100vh;
+      grid-area: header;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 255, 255, .96);
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      min-width: 0;
+      box-shadow: 0 3px 12px rgba(20, 34, 28, .04);
+      z-index: 2;
     }
 
     .brand h1 {
       margin: 0 0 4px;
-      font-size: 19px;
+      font-size: 20px;
       letter-spacing: 0;
     }
     .brand p {
       margin: 0;
       color: var(--muted);
       font-size: 12px;
+      white-space: nowrap;
     }
 
     .status-box {
-      border: 1px solid var(--line);
-      background: var(--panel);
-      border-radius: 8px;
-      padding: 10px;
-      display: grid;
-      gap: 5px;
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+      gap: 5px 12px;
       font-size: 12px;
       color: var(--muted);
     }
+    .status-box > div { white-space: nowrap; }
+    .status-box #sources {
+      color: var(--ok);
+      background: #e8f5ed;
+      border-radius: 999px;
+      padding: 3px 9px;
+      font-weight: 700;
+    }
+    .status-technical { display: none; }
 
     .tabs {
       display: grid;
@@ -116,28 +134,43 @@
       font-weight: 400;
     }
 
-    .side-actions {
-      display: grid;
-      gap: 7px;
-    }
+    .side-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+    .side-actions button { white-space: nowrap; }
 
     .main {
+      grid-area: feed;
       min-width: 0;
-      height: 100vh;
+      min-height: 0;
       display: grid;
-      grid-template-rows: auto auto auto minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr);
       border-right: 1px solid var(--line);
     }
 
     .toolbar {
-      padding: 12px;
+      padding: 10px 14px;
       background: var(--panel);
       border-bottom: 1px solid var(--line);
       display: grid;
-      grid-template-columns: minmax(0, 1fr) auto auto auto;
+      gap: 9px;
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+    .toolbar-row {
+      display: grid;
+      grid-template-columns: minmax(180px, 1fr) auto auto auto;
       gap: 8px;
       align-items: center;
     }
+    .filter-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+    }
+    .filter-group { display: flex; align-items: center; gap: 7px; }
+    .filter-label { color: var(--muted); font-size: 11px; font-weight: 700; }
     .search {
       width: 100%;
       border: 1px solid var(--line);
@@ -156,10 +189,11 @@
     }
 
     .priority-box {
-      border: 1px solid #d3a64a;
-      background: #fffaf0;
-      border-radius: 8px;
-      padding: 10px;
+      border: 1px solid #ead49f;
+      border-left: 4px solid #c48b16;
+      background: #fffcf5;
+      border-radius: 10px;
+      padding: 11px 11px 11px 12px;
       display: grid;
       gap: 8px;
     }
@@ -179,8 +213,8 @@
     .item {
       background: var(--panel);
       border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 11px;
+      border-radius: 10px;
+      padding: 13px;
       display: grid;
       gap: 8px;
     }
@@ -189,11 +223,12 @@
       box-shadow: var(--shadow);
     }
     .item.priority {
-      border-color: #dfb757;
-      background: #fffdf7;
+      border-color: transparent;
+      background: rgba(255, 255, 255, .82);
     }
     .item-title {
       font-weight: 700;
+      font-size: 15px;
       line-height: 1.42;
       overflow-wrap: anywhere;
     }
@@ -232,8 +267,9 @@
     }
 
     .detail {
+      grid-area: detail;
       min-width: 0;
-      height: 100vh;
+      min-height: 0;
       background: var(--panel-2);
       display: grid;
       grid-template-rows: auto minmax(0, 1fr);
@@ -281,7 +317,7 @@
     }
     textarea {
       width: 100%;
-      min-height: 210px;
+      min-height: 145px;
       border: 1px solid var(--line);
       border-radius: 6px;
       padding: 10px;
@@ -311,18 +347,37 @@
       white-space: nowrap;
     }
 
-    @media (max-width: 980px) {
-      .app { grid-template-columns: 1fr; }
+    @media (max-width: 1100px) {
+      body { overflow: auto; }
+      .app {
+        height: auto;
+        min-height: 100vh;
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: auto auto auto;
+        grid-template-areas: "header" "feed" "detail";
+      }
       .side, .main, .detail {
         height: auto;
         min-height: auto;
         border-right: 0;
       }
-      .side { border-bottom: 1px solid var(--line); }
+      .side { border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+      .status-box { order: 3; width: 100%; margin-left: 0; justify-content: flex-start; }
       .main { border-bottom: 1px solid var(--line); }
-      .tabs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-      .toolbar { grid-template-columns: 1fr auto; }
-      .toolbar .wide { grid-column: 1 / -1; }
+      .toolbar-row { grid-template-columns: minmax(0, 1fr) auto; }
+      .toolbar-row .secondary-action { display: none; }
+      .feed { max-height: 70vh; }
+    }
+
+    @media (max-width: 640px) {
+      .side { padding: 10px; }
+      .brand { width: 100%; }
+      .brand p { white-space: normal; }
+      .side-actions { width: 100%; }
+      .side-actions button { flex: 1 1 auto; }
+      .filter-row { align-items: flex-start; }
+      .filter-group { flex-wrap: wrap; }
+      .item-actions { align-items: flex-end; }
     }
   </style>
 </head>
@@ -334,10 +389,11 @@
         <p>最新ニュースの収集と投稿ネタのすみわけ管理</p>
       </div>
       <div class="status-box">
-        <div id="version">version: layout-fix-20260714</div>
-        <div id="updated">updated: --</div>
-        <div id="endpoint">source: --</div>
-        <div id="summary">summary: --</div>
+        <div id="version" class="status-technical">version: design-refresh-20260717</div>
+        <div id="updated">更新 --</div>
+        <div id="endpoint" class="status-technical">source: --</div>
+        <div id="sources">収集 --</div>
+        <div id="summary">ニュース --</div>
       </div>
       <div class="side-actions">
         <button id="showAll" class="primary">最新ニュースを見る</button>
@@ -348,26 +404,27 @@
 
     <section class="main">
       <div class="toolbar">
-        <input id="search" class="search wide" type="search" placeholder="ニュース検索">
-        <button id="reload" class="primary">更新</button>
-        <button id="markAllPosted">表示中を全部投稿済み</button>
-        <button id="clearPosted" class="ghost">投稿済みクリア</button>
-      </div>
-      <div class="toolbar">
-        <div class="age-tabs wide">
-          <button id="age24" type="button">24h</button>
-          <button id="age48" class="primary" type="button">48h</button>
-          <button id="age72" type="button">72h</button>
-          <button id="age168" type="button">7日</button>
+        <div class="toolbar-row">
+          <input id="search" class="search" type="search" placeholder="ニュース、企業、材料を検索">
+          <button id="reload" class="primary">更新</button>
+          <button id="markAllPosted" class="secondary-action">表示中を投稿済み</button>
+          <button id="clearPosted" class="ghost secondary-action">投稿済みクリア</button>
         </div>
-      </div>
-      <div class="toolbar">
-        <div class="age-tabs wide">
-          <span class="muted" style="align-self:center;">投稿ネタ:</span>
-          <button id="tierAll" class="primary" type="button">全部</button>
-          <button id="tier0" type="button">◎最優先</button>
-          <button id="tier1" type="button">◯検討</button>
-          <button id="tier2" type="button">△参考</button>
+        <div class="filter-row">
+          <div class="filter-group age-tabs">
+            <span class="filter-label">期間</span>
+            <button id="age24" type="button">24h</button>
+            <button id="age48" class="primary" type="button">48h</button>
+            <button id="age72" type="button">72h</button>
+            <button id="age168" type="button">7日</button>
+          </div>
+          <div class="filter-group age-tabs">
+            <span class="filter-label">投稿優先度</span>
+            <button id="tierAll" class="primary" type="button">全部</button>
+            <button id="tier0" type="button">◎最優先</button>
+            <button id="tier1" type="button">◯検討</button>
+            <button id="tier2" type="button">△参考</button>
+          </div>
         </div>
       </div>
       <div id="feed" class="feed"></div>
@@ -403,7 +460,7 @@
   </main>
 
   <script>
-    const APP_VERSION = "layout-fix-20260714";
+    const APP_VERSION = "design-refresh-20260717";
     const PUBLIC_ORIGIN = "https://ionqnews.netlify.app";
     const GPTS_URL = "https://chatgpt.com/g/g-6a41a5264e6081918db223a3b8a4d808-liang-zi-rehoto";
     const DEFAULT_MAX_AGE_HOURS = 48;
@@ -423,11 +480,13 @@
       tier: "all",
       blockedSources: new Set(),
       allowedSources: new Set(),
+      sourceStats: {},
       hideUnreadable: localStorage.getItem("ionq-hide-unreadable") === "1"
     };
 
     const el = {
       updated: document.getElementById("updated"),
+      sources: document.getElementById("sources"),
       endpoint: document.getElementById("endpoint"),
       summary: document.getElementById("summary"),
       showAll: document.getElementById("showAll"),
@@ -512,24 +571,45 @@
     }
 
     async function refresh() {
-      el.updated.textContent = "updated: loading";
+      el.updated.textContent = "更新中";
       try {
         const data = await fetchJson(latestEndpoint, 12000);
         state.rawItems = extractItems(data);
         applyAgeFilter();
         const cachedAt = data.cachedAt || data.updatedAt || new Date().toISOString();
+        state.sourceStats = data.sourceStats || {};
+        renderSourceHealth(state.sourceStats, cachedAt);
         const cacheNote = data.cacheStatus === "hit" ? "" :
           data.cacheStatus === "stale_fallback" ? " (キャッシュ古/軽量応答)" :
           data.cacheStatus === "miss_fallback" ? " (初回/軽量応答)" : "";
-        el.updated.textContent = "updated: " + formatTime(cachedAt) + cacheNote;
+        el.updated.textContent = "更新 " + formatTime(cachedAt) + cacheNote;
         updateViewButtons();
         renderFeed();
         if (!state.selectedId && state.items.length) selectItem(state.items[0].id);
       } catch (error) {
-        el.updated.textContent = "updated: failed";
-        el.summary.textContent = "summary: fetch failed";
+        el.updated.textContent = "更新失敗";
+        el.summary.textContent = "ニュース取得失敗";
         el.feed.innerHTML = errorBox("速報取得に失敗しました", error.message, latestEndpoint);
       }
+    }
+
+    function renderSourceHealth(stats, cachedAt) {
+      const entries = Object.entries(stats || {});
+      const cacheAge = Date.now() - Date.parse(cachedAt || "");
+      if (!entries.length) {
+        el.sources.textContent = "収集 状態不明";
+        el.sources.style.color = "";
+        return;
+      }
+      const failed = entries.filter(function (pair) { return pair[1] && pair[1].error; });
+      const empty = entries.filter(function (pair) { return pair[1] && !pair[1].error && pair[1].count === 0; });
+      const stale = Number.isFinite(cacheAge) && cacheAge > 2 * 60 * 60 * 1000;
+      const parts = ["正常 " + (entries.length - failed.length) + "/" + entries.length];
+      if (failed.length) parts.push("失敗 " + failed.map(function (pair) { return pair[0]; }).join(","));
+      if (empty.length) parts.push("0件 " + empty.map(function (pair) { return pair[0]; }).join(","));
+      if (stale) parts.push("更新2時間超");
+      el.sources.textContent = "収集 " + parts.join(" / ");
+      el.sources.style.color = failed.length || stale ? "#b54434" : "";
     }
 
     // 新形式(data.items: バックエンドで正規化・ID付与済み)を優先。
@@ -540,6 +620,7 @@
       addRows(rows, data.officialNews, "ir", "最新IR", "IR");
       addRows(rows, data.sec, "sec", "重要SEC", "SEC");
       addRows(rows, data.marketNews, "news", "IONQ NEWS", "NEWS");
+      addRows(rows, data.macroNews, "macro", "金融・マクロ", "MNEWS");
       addRows(rows, data.quantumNews, "quantum", "量子業界", "QNEWS");
       addRows(rows, data.competitorSec, "competitor", "競合SEC", "CSEC");
       addRows(rows, data.competitorNews, "competitor", "競合NEWS", "CNEWS");
@@ -565,7 +646,7 @@
     }
 
     // ============================================================
-    // 投稿ネタのすみわけ(2週間の運用分析で反応が良かった順に3分類)。
+    // 投稿ネタのすみわけ。IonQ直結・材料性・一次情報・鮮度を合算する。
     // ◎最優先: IonQ直結の株価材料(受注・決算・買収・アナリスト・IR/SEC)
     //          → 反応・拡散が最も大きい。積極的に投稿。
     // ◯検討  : 競合の重要ニュース・政策・他社の決算/資金 など株価材料。
@@ -573,11 +654,9 @@
     // △参考  : 技術・研究・学術・一般業界 → 反応薄。自分の情報収集用。
     // ============================================================
     function postTier(item) {
-      const text = signalText(item);
-      const ionqDirect = item.category === "ir" || item.category === "sec" || /\bionq\b|\$ionq/.test(text);
-      const moving = isMarketMovingCandidate(item);
-      if (ionqDirect && moving) return 0;
-      if (ionqDirect || moving) return 1;
+      const score = newsPriorityScore(item);
+      if (score >= 70) return 0;
+      if (score >= 50) return 1;
       return 2;
     }
 
@@ -611,7 +690,7 @@
     }
 
     // 同じニュースの言い換え転載を1枚のカードにまとめる。
-    // 代表 = 最新の1件。残りはgroupItemsに保持し、チェックは全員に連動する。
+    // 代表 = 一次情報に近く、材料性が高い媒体。残りはgroupItemsに保持する。
     function groupSimilarItems(items) {
       const parent = items.map(function (_, i) { return i; });
       function find(x) {
@@ -627,18 +706,19 @@
         }
       }
       const groups = new Map();
-      const reps = [];
       items.forEach(function (item, i) {
         const root = find(i);
-        if (!groups.has(root)) {
-          groups.set(root, item);
-          item.groupItems = [item];
-          reps.push(item);
-        } else {
-          groups.get(root).groupItems.push(item);
-        }
+        if (!groups.has(root)) groups.set(root, []);
+        groups.get(root).push(item);
       });
-      return reps;
+      return Array.from(groups.values()).map(function (members) {
+        members.sort(compareNewsPriority);
+        const representative = members[0];
+        representative.groupItems = members;
+        return representative;
+      }).sort(function (a, b) {
+        return Date.parse(b.publishedAt || b.acceptedAt || 0) - Date.parse(a.publishedAt || a.acceptedAt || 0);
+      });
     }
 
     function groupSources(item) {
@@ -708,7 +788,7 @@
 
     function renderSummary(stats) {
       if (!stats) {
-        el.summary.textContent = "summary: --";
+        el.summary.textContent = "ニュース --";
         return;
       }
       const parts = [
@@ -716,15 +796,28 @@
         state.maxAgeHours + "h " + stats.fresh + "件",
         "除外 " + stats.old + "件"
       ];
-      el.summary.textContent = "summary: " + parts.join(" / ");
+      el.summary.textContent = parts.join(" / ");
     }
 
     function renderFeed() {
       const items = filteredItems();
+      const selectionVisible = items.some(function (item) { return item.id === state.selectedId; });
+      if (!selectionVisible && items.length) {
+        selectItem(items[0].id);
+        return;
+      }
+      if (!items.length && state.selectedId) {
+        state.selectedId = "";
+        el.detailHead.innerHTML = "<h2>表示対象の記事がありません</h2>";
+        el.gptsText.value = "";
+        el.copyStatus.textContent = "フィルターを変更してください";
+        updateBlockSourceButton(null);
+      }
       // 優先欄も検索・期間・投稿済み・読取可否・優先度フィルターに従わせる。
       // 特に「投稿済みだけ」画面へ未投稿記事が出ないようにする。
       const priorityItems = items
         .filter(function (item) { return postTier(item) === 0 && !isPosted(item); })
+        .sort(compareNewsPriority)
         .slice(0, 5);
 
       el.feed.innerHTML = "";
@@ -769,13 +862,14 @@
         item.titleJa ? "<div class=\"item-title-original\">" + escapeHtml(item.title) + "</div>" : "",
         "<div class=\"meta\">",
         renderTierBadge(item),
+        renderPriorityReasonBadges(item),
         "<span class=\"badge\">" + escapeHtml(item.label) + "</span>",
         (item.groupItems && item.groupItems.length > 1 ? "<span class=\"badge\">同ニュース×" + item.groupItems.length + "</span>" : ""),
         (itemUnreadable(item) ? "<span class=\"badge\" style=\"border-color:#d3a64a;color:#9b5a00;\">GPT読取難</span>" : ""),
         (isUntranslated(item) ? "<span class=\"badge\">翻訳待ち</span>" : ""),
-        renderSignalBadges(item),
         item.form ? "<span class=\"badge\">" + escapeHtml(item.form) + "</span>" : "",
         "<span>" + escapeHtml(groupSources(item)) + "</span>",
+        "<span class=\"badge\">" + escapeHtml(marketSessionLabel(item.acceptedAt || item.publishedAt)) + "</span>",
         "<span>" + escapeHtml(formatTime(item.publishedAt)) + "</span>",
         "</div>",
         "<div class=\"item-actions\">",
@@ -1433,8 +1527,10 @@
     function isFreshItem(item) {
       const value = item.publishedAt || item.acceptedAt || item.filingDate || item.reportDate || "";
       const ms = Date.parse(value);
-      if (!Number.isFinite(ms)) return true;
-      return Date.now() - ms <= state.maxAgeHours * 60 * 60 * 1000;
+      if (!Number.isFinite(ms)) return false;
+      const age = Date.now() - ms;
+      return age >= -5 * 60 * 1000 &&
+        age <= state.maxAgeHours * 60 * 60 * 1000;
     }
 
     function signalText(item) {
@@ -1449,6 +1545,74 @@
       ].join(" ").toLowerCase();
     }
 
+    const MATERIAL_NEWS_RE = /earnings|revenue|guidance|quarterly|annual|contract|award|deal|order|booking|backlog|partnership|strategic|collaboration|customer|deployment|government|defense|army|navy|air force|darpa|doe|nasa|funding|financing|offering|convertible|acquisition|merger|buyout|analyst|upgrade|downgrade|price target|rating|breakthrough|logical qubit|error correction|fault tolerant|quantum advantage|commercial|production|data center|federal reserve|\bfed\b|interest rates?|rate cut|rate hike|inflation|\bcpi\b|\bpce\b|payroll|jobs report|treasury yields?|recession|tariffs?|market selloff|dilution|short seller/i;
+    const LOW_VALUE_NEWS_RE = /should you buy|is .* a buy|stock price prediction|price forecast|where will .* stock|why .* stock|could .* stock|millionaire.?maker|technical analysis|unusual options|options trading|short interest|wall street thinks|top \d+ .*stocks?/i;
+    const PRIMARY_SOURCE_RE = /sec edgar|ionq ir|nasdaq\/ionq|business wire|globenewswire|pr newswire|\.gov\b|darpa|department of defense|department of energy/i;
+
+    function newsPriorityScore(item, nowValue) {
+      const text = signalText(item);
+      const category = String(item.category || "").toLowerCase();
+      const directIonq = category === "ir" || category === "sec" || /\bionq\b|\$ionq/.test(text);
+      const material = MATERIAL_NEWS_RE.test(text) || isMarketMovingCandidate(item);
+      let score = 0;
+      if (directIonq) score += 40;
+      if (material) score += 25;
+      if (PRIMARY_SOURCE_RE.test(text) || item.form) score += 20;
+      if ((category === "competitor" || category === "quantum") && material) score += 10;
+      if (category === "macro" && material) score += 15;
+      if (LOW_VALUE_NEWS_RE.test(text)) score -= 35;
+
+      const now = nowValue === undefined ? Date.now() : (typeof nowValue === "number" ? nowValue : Date.parse(nowValue));
+      const itemTime = Date.parse(item.acceptedAt || item.publishedAt || "");
+      const ageHours = Number.isFinite(itemTime) && Number.isFinite(now) ? (now - itemTime) / 3600000 : Infinity;
+      if (ageHours <= 2) score += 15;
+      else if (ageHours <= 6) score += 10;
+      else if (ageHours <= 24) score += 5;
+      return Math.max(0, Math.min(100, score));
+    }
+
+    function compareNewsPriority(a, b) {
+      const scoreDiff = newsPriorityScore(b) - newsPriorityScore(a);
+      if (scoreDiff) return scoreDiff;
+      return Date.parse(b.publishedAt || b.acceptedAt || 0) - Date.parse(a.publishedAt || a.acceptedAt || 0);
+    }
+
+    function priorityReasons(item) {
+      const text = signalText(item);
+      const reasons = [];
+      if (item.category === "ir" || item.category === "sec" || /\bionq\b|\$ionq/.test(text)) reasons.push("IonQ直結");
+      if (PRIMARY_SOURCE_RE.test(text) || item.form) reasons.push("一次情報");
+      if (MATERIAL_NEWS_RE.test(text) || isMarketMovingCandidate(item)) reasons.push("重要材料");
+      if (item.category === "macro") reasons.push("市場全体");
+      return Array.from(new Set(reasons)).slice(0, 3);
+    }
+
+    function renderPriorityReasonBadges(item) {
+      return priorityReasons(item).slice(0, 1).map(function (reason) {
+        return "<span class=\"badge signal\">" + escapeHtml(reason) + "</span>";
+      }).join("");
+    }
+
+    function marketSessionLabel(value) {
+      const ms = Date.parse(value || "");
+      if (!Number.isFinite(ms)) return "米時間不明";
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/New_York",
+        weekday: "short",
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23"
+      }).formatToParts(new Date(ms));
+      const values = {};
+      parts.forEach(function (part) { values[part.type] = part.value; });
+      if (values.weekday === "Sat" || values.weekday === "Sun") return "米休場";
+      const minutes = Number(values.hour) * 60 + Number(values.minute);
+      if (minutes >= 4 * 60 && minutes < 9 * 60 + 30) return "米プレ";
+      if (minutes >= 9 * 60 + 30 && minutes < 16 * 60) return "米市場中";
+      if (minutes >= 16 * 60 && minutes < 20 * 60) return "米アフター";
+      return "米休場";
+    }
+
     function getSignalBadges(item) {
       const text = signalText(item);
       const badges = [];
@@ -1458,6 +1622,7 @@
       if (/breakthrough|logical qubit|error correction|fault tolerant|quantum advantage|qubit|qpu|fidelity|gate|ion trap|trapped ion|superconducting|photonic|laser|amplifier|cryogenic|modular|algorithm/.test(text)) badges.push("技術材料");
       if (/contract|award|deal|order|booking|bookings|backlog|partnership|strategic|collaboration|customer|deployment|government|defense|commercial|production|data center/.test(text)) badges.push("事業材料");
       if (/funding|raises|raised|financing|offering|convertible|cash|debt|equity|acquisition|merger|investment|institutional investor|hedge fund|asset manager|etf|holdings|stake|portfolio/.test(text)) badges.push("資金材料");
+      if (item.category === "macro") badges.push("金融・マクロ");
       if (/^(8-K|10-Q|10-K|S-3|424B|13D|13G|SC 13|DEF 14A)/.test(form) || item.category === "sec" || item.category === "competitor") badges.push("SEC/開示");
       if (!badges.length && item.category === "quantum") badges.push("業界材料");
       if (!badges.length && item.category === "news") badges.push("ニュース");
