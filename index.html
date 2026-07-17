@@ -646,12 +646,10 @@
     }
 
     // ============================================================
-    // 投稿ネタのすみわけ。IonQ直結・材料性・一次情報・鮮度を合算する。
-    // ◎最優先: IonQ直結の株価材料(受注・決算・買収・アナリスト・IR/SEC)
-    //          → 反応・拡散が最も大きい。積極的に投稿。
-    // ◯検討  : 競合の重要ニュース・政策・他社の決算/資金 など株価材料。
-    //          → IonQ文脈を添えて選んで投稿。
-    // △参考  : 技術・研究・学術・一般業界 → 反応薄。自分の情報収集用。
+    // 投稿ネタのすみわけ。優先度は記事自体の重要性で固定し、鮮度は公開時刻で別表示する。
+    // ◎最優先: IonQの決算・受注・買収・増資・重要SEC・格付けなど、株主が必ず確認する材料。
+    // ◯検討  : IonQの軽めの公式情報、競合の大材料、量子政策、主要マクロ材料。
+    // △参考  : 一般研究・解説・相場予想・内容の薄いまとめ記事。通知対象外。
     // ============================================================
     function postTier(item) {
       const score = newsPriorityScore(item);
@@ -1545,30 +1543,42 @@
       ].join(" ").toLowerCase();
     }
 
-    const MATERIAL_NEWS_RE = /earnings|revenue|guidance|quarterly|annual|contract|award|deal|order|booking|backlog|partnership|strategic|collaboration|customer|deployment|government|defense|army|navy|air force|darpa|doe|nasa|funding|financing|offering|convertible|acquisition|merger|buyout|analyst|upgrade|downgrade|price target|rating|breakthrough|logical qubit|error correction|fault tolerant|quantum advantage|commercial|production|data center|federal reserve|\bfed\b|interest rates?|rate cut|rate hike|inflation|\bcpi\b|\bpce\b|payroll|jobs report|treasury yields?|recession|tariffs?|market selloff|dilution|short seller/i;
+    const HIGH_IMPACT_NEWS_RE = /earnings|revenue|guidance|quarterly results?|annual results?|contract|award|order|bookings?|backlog|multi[ -]year|definitive agreement|\$\s?\d[\d,.]*\s?(?:million|billion)|\d[\d,.]*\s?(?:million|billion) dollars|funding|financing|raises?|raised|offering|convertible|acquisition|merger|buyout|dilution|analyst|upgrade|downgrade|price target|rating|breakthrough|logical qubit|error correction|fault[ -]tolerant|quantum advantage|legislation|appropriation|government budget|executive order|national strategy|export controls?|federal reserve|\bfed\b|\bfomc\b|\bpowell\b|interest rates?|rate cut|rate hike|quantitative easing|quantitative tightening|inflation|consumer price index|producer price index|employment situation|job openings|gross domestic product|personal income and outlays|\bcpi\b|\bpce\b|\bgdp\b|payrolls?|jobs report|jobless claims|unemployment|retail sales|\bism\b|\bpmi\b|consumer confidence|treasury yields?|treasury auction|debt ceiling|government shutdown|recession|tariffs?|sanctions?|oil prices?|crude oil|\bvix\b|volatility index|credit spreads?|bank (?:crisis|failure)|liquidity crisis|market selloff|short seller/i;
+    const MATERIAL_NEWS_RE = /deal|partnership|strategic|collaboration|customer|deployment|government|defense|army|navy|air force|darpa|doe|nasa|commercial|production|data center|investment|stake/i;
+    const CRITICAL_MACRO_RE = /emergency rate cut|emergency rate hike|market crash|market selloff|bank (?:crisis|failure|collapse)|liquidity crisis|debt default|government shutdown begins|trading halt|vix (?:spikes?|surges?)/i;
     const LOW_VALUE_NEWS_RE = /should you buy|is .* a buy|stock price prediction|price forecast|where will .* stock|why .* stock|could .* stock|millionaire.?maker|technical analysis|unusual options|options trading|short interest|wall street thinks|top \d+ .*stocks?/i;
-    const PRIMARY_SOURCE_RE = /sec edgar|ionq ir|nasdaq\/ionq|business wire|globenewswire|pr newswire|\.gov\b|darpa|department of defense|department of energy/i;
+    const PRIMARY_SOURCE_RE = /sec edgar|ionq ir|ionq公式|nasdaq\/ionq|business wire|globenewswire|pr newswire|\.gov\b|darpa|department of defense|department of energy|federal reserve|\bbls\b|bureau of labor statistics|\bbea\b|bureau of economic analysis/i;
 
-    function newsPriorityScore(item, nowValue) {
+    function heuristicPriorityScore(item) {
       const text = signalText(item);
       const category = String(item.category || "").toLowerCase();
-      const directIonq = category === "ir" || category === "sec" || /\bionq\b|\$ionq/.test(text);
-      const material = MATERIAL_NEWS_RE.test(text) || isMarketMovingCandidate(item);
+      const directIonq = category === "sec" || String(item.ticker || "").toUpperCase() === "IONQ" || /\bionq\b|\$ionq|ionq公式|ionq ir|nasdaq\/ionq/.test(text);
+      const form = String(item.form || "").toUpperCase();
+      const importantForm = /^(8-K|10-Q|10-K|S-3|424B|13D|13G|SC 13|DEF 14A)/.test(form);
+      const highImpact = HIGH_IMPACT_NEWS_RE.test(text) || importantForm;
+      const material = highImpact || MATERIAL_NEWS_RE.test(text);
       let score = 0;
-      if (directIonq) score += 40;
-      if (material) score += 25;
-      if (PRIMARY_SOURCE_RE.test(text) || item.form) score += 20;
-      if ((category === "competitor" || category === "quantum") && material) score += 10;
+      if (directIonq) score += 35;
+      if (highImpact) score += 35;
+      else if (material) score += 20;
+      if (PRIMARY_SOURCE_RE.test(text) || item.form) score += 15;
+      if ((category === "competitor" || category === "quantum") && material) score += 15;
       if (category === "macro" && material) score += 15;
-      if (LOW_VALUE_NEWS_RE.test(text)) score -= 35;
-
-      const now = nowValue === undefined ? Date.now() : (typeof nowValue === "number" ? nowValue : Date.parse(nowValue));
-      const itemTime = Date.parse(item.acceptedAt || item.publishedAt || "");
-      const ageHours = Number.isFinite(itemTime) && Number.isFinite(now) ? (now - itemTime) / 3600000 : Infinity;
-      if (ageHours <= 2) score += 15;
-      else if (ageHours <= 6) score += 10;
-      else if (ageHours <= 24) score += 5;
+      if (category === "macro" && CRITICAL_MACRO_RE.test(text)) score += 20;
+      if (LOW_VALUE_NEWS_RE.test(text)) score -= 40;
       return Math.max(0, Math.min(100, score));
+    }
+
+    function mergeAiPriorityScore(baseScore, aiScore) {
+      const base = Number(baseScore);
+      const ai = Number(aiScore);
+      if (!Number.isFinite(ai) || ai < 0 || ai > 100) return base;
+      if (base >= 70) return base;
+      return Math.max(0, Math.min(100, Math.round(base * 0.4 + ai * 0.6)));
+    }
+
+    function newsPriorityScore(item, nowValue) {
+      return mergeAiPriorityScore(heuristicPriorityScore(item), item.aiPriorityScore);
     }
 
     function compareNewsPriority(a, b) {
@@ -1580,10 +1590,13 @@
     function priorityReasons(item) {
       const text = signalText(item);
       const reasons = [];
-      if (item.category === "ir" || item.category === "sec" || /\bionq\b|\$ionq/.test(text)) reasons.push("IonQ直結");
+      if (item.category === "sec" || String(item.ticker || "").toUpperCase() === "IONQ" || /\bionq\b|\$ionq|ionq公式|ionq ir|nasdaq\/ionq/.test(text)) reasons.push("IonQ直結");
       if (PRIMARY_SOURCE_RE.test(text) || item.form) reasons.push("一次情報");
-      if (MATERIAL_NEWS_RE.test(text) || isMarketMovingCandidate(item)) reasons.push("重要材料");
+      const form = String(item.form || "").toUpperCase();
+      if (HIGH_IMPACT_NEWS_RE.test(text) || /^(8-K|10-Q|10-K|S-3|424B|13D|13G|SC 13|DEF 14A)/.test(form)) reasons.push("重要材料");
+      else if (MATERIAL_NEWS_RE.test(text)) reasons.push("関連材料");
       if (item.category === "macro") reasons.push("市場全体");
+      if (Number.isFinite(Number(item.aiPriorityScore))) reasons.push("AI確認済み");
       return Array.from(new Set(reasons)).slice(0, 3);
     }
 
