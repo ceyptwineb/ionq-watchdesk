@@ -158,9 +158,21 @@
     }
     .toolbar-row {
       display: grid;
-      grid-template-columns: minmax(180px, 1fr) auto auto auto;
+      grid-template-columns: minmax(180px, 1fr) auto;
       gap: 8px;
       align-items: center;
+    }
+    .utility-row {
+      display: flex;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .weekly-action {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: var(--accent-soft);
+      font-weight: 700;
     }
     .filter-row {
       display: flex;
@@ -365,7 +377,6 @@
       .status-box { order: 3; width: 100%; margin-left: 0; justify-content: flex-start; }
       .main { border-bottom: 1px solid var(--line); }
       .toolbar-row { grid-template-columns: minmax(0, 1fr) auto; }
-      .toolbar-row .secondary-action { display: none; }
       .feed { max-height: 70vh; }
     }
 
@@ -378,6 +389,15 @@
       .filter-row { align-items: flex-start; }
       .filter-group { flex-wrap: wrap; }
       .item-actions { align-items: flex-end; }
+      .utility-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      }
+      .utility-row button {
+        width: 100%;
+        min-height: 42px;
+      }
+      .utility-row .weekly-action { grid-column: 1 / -1; }
     }
   </style>
 </head>
@@ -407,8 +427,6 @@
         <div class="toolbar-row">
           <input id="search" class="search" type="search" placeholder="ニュース、企業、材料を検索">
           <button id="reload" class="primary">更新</button>
-          <button id="markAllPosted" class="secondary-action">表示中を投稿済み</button>
-          <button id="clearPosted" class="ghost secondary-action">投稿済みクリア</button>
         </div>
         <div class="filter-row">
           <div class="filter-group age-tabs">
@@ -425,6 +443,11 @@
             <button id="tier1" type="button">◯検討</button>
             <button id="tier2" type="button">△参考</button>
           </div>
+        </div>
+        <div class="utility-row" aria-label="まとめと投稿済み操作">
+          <button id="weeklyDigest" class="weekly-action" type="button">◎最優先の週間まとめ</button>
+          <button id="markAllPosted" class="secondary-action" type="button">表示中を投稿済み</button>
+          <button id="clearPosted" class="ghost secondary-action" type="button">投稿済みクリア</button>
         </div>
       </div>
       <div id="feed" class="feed"></div>
@@ -460,9 +483,10 @@
   </main>
 
   <script>
-    const APP_VERSION = "design-refresh-20260717";
+    const APP_VERSION = "mobile-weekly-20260724";
     const PUBLIC_ORIGIN = "https://ionqnews.netlify.app";
     const GPTS_URL = "https://chatgpt.com/g/g-6a41a5264e6081918db223a3b8a4d808-liang-zi-rehoto";
+    const WEEKLY_GPTS_URL = "https://chatgpt.com/g/g-6a629ec2cb7c81919c4f72700a4839c6-liang-zi-zhou-jian-rehoto";
     const DEFAULT_MAX_AGE_HOURS = 48;
     const isLocalPreview = location.protocol === "file:" || location.hostname === "127.0.0.1" || location.hostname === "localhost";
     const API = isLocalPreview ? PUBLIC_ORIGIN : "";
@@ -496,6 +520,7 @@
       feed: document.getElementById("feed"),
       search: document.getElementById("search"),
       reload: document.getElementById("reload"),
+      weeklyDigest: document.getElementById("weeklyDigest"),
       markAllPosted: document.getElementById("markAllPosted"),
       clearPosted: document.getElementById("clearPosted"),
       detailHead: document.getElementById("detailHead"),
@@ -543,6 +568,7 @@
       el.openGpts.addEventListener("click", copyAndOpenGpts);
       el.copyUrl.addEventListener("click", copySelectedUrl);
       el.openUrl.addEventListener("click", openSelectedUrl);
+      el.weeklyDigest.addEventListener("click", createWeeklyDigest);
       el.markAllPosted.addEventListener("click", markAllPosted);
       el.clearPosted.addEventListener("click", clearPosted);
       el.hideUnreadable.addEventListener("click", function () {
@@ -941,6 +967,70 @@
         "type: " + (item.label || item.type || ""),
         "補足: URLがBOT対策などで開けない場合は、タイトルと出典でWeb検索して本文を確認してから書くこと。"
       ].filter(Boolean).join("\n");
+    }
+
+    function weeklyPriorityItems() {
+      const seenIds = new Set();
+      const candidates = state.rawItems.filter(function (item) {
+        if (!(item.title || item.url)) return false;
+        if (isExcludedSource(item)) return false;
+        if (item.id && seenIds.has(item.id)) return false;
+        if (item.id) seenIds.add(item.id);
+        if (!isWithinHours(item, 168)) return false;
+        return postTier(item) === 0;
+      }).map(function (item) {
+        return Object.assign({}, item, { groupItems: undefined });
+      });
+      return groupSimilarItems(candidates).sort(compareNewsPriority).slice(0, 10);
+    }
+
+    function buildWeeklyDigestText(items) {
+      const rows = [
+        "mode: weekly_digest",
+        "対象期間: 直近7日間",
+        "依頼: 以下の◎最優先ニュースを重複整理し、重要度順に選んで、1つのX長文投稿として週間まとめを作成してください。",
+        "形式: ニュースごとに、日本語の見出し、100〜200字程度の要約、出典名、実記事URLを並べてください。スレッドには分割しないでください。"
+      ];
+      items.forEach(function (item, index) {
+        const target = preferredReadableItem(item);
+        rows.push(
+          "",
+          "記事" + (index + 1),
+          "title: " + (target.title || item.title || ""),
+          item.titleJa ? "title_ja: " + item.titleJa : "",
+          "source: " + (target.source || item.source || ""),
+          "type: " + (item.label || item.type || ""),
+          "published_at: " + (item.publishedAt || item.acceptedAt || ""),
+          "priority_score: " + newsPriorityScore(item),
+          "url: " + (target.url || item.url || "")
+        );
+      });
+      return rows.filter(function (row) { return row !== ""; }).join("\n");
+    }
+
+    async function createWeeklyDigest() {
+      const items = weeklyPriorityItems();
+      if (!items.length) {
+        el.copyStatus.innerHTML = "<span class=\"warn\">直近7日間に◎最優先ニュースがありません</span>";
+        alert("直近7日間に◎最優先ニュースがありません。");
+        return;
+      }
+      const text = buildWeeklyDigestText(items);
+      el.gptsText.value = text;
+      el.detailHead.innerHTML = [
+        "<h2>◎最優先の週間まとめ</h2>",
+        "<div class=\"muted\">直近7日・重複整理後 " + items.length + " 件をGPTsへ渡します。投稿済みの記事も振り返り対象に含みます。</div>"
+      ].join("");
+      const opened = window.open(WEEKLY_GPTS_URL, "_blank");
+      if (opened) opened.opener = null;
+      try {
+        await copyText(text);
+        el.copyStatus.innerHTML = opened
+          ? "<span class=\"ok\">週間まとめ用テキストをコピーしてGPTsを開きました</span>"
+          : "<span class=\"warn\">コピーしました。ポップアップが遮断されたため、GPTsを手動で開いてください</span>";
+      } catch (error) {
+        el.copyStatus.innerHTML = "<span class=\"warn\">GPTsは開きましたが、コピーに失敗しました</span>";
+      }
     }
 
     function preferredReadableItem(item) {
@@ -1523,12 +1613,16 @@
     }
 
     function isFreshItem(item) {
+      return isWithinHours(item, state.maxAgeHours);
+    }
+
+    function isWithinHours(item, hours) {
       const value = item.publishedAt || item.acceptedAt || item.filingDate || item.reportDate || "";
       const ms = Date.parse(value);
       if (!Number.isFinite(ms)) return false;
       const age = Date.now() - ms;
       return age >= -5 * 60 * 1000 &&
-        age <= state.maxAgeHours * 60 * 60 * 1000;
+        age <= hours * 60 * 60 * 1000;
     }
 
     function signalText(item) {
