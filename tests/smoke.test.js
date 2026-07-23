@@ -328,6 +328,20 @@ test("画面では日時不明の記事を新着扱いしない", () => {
   assert.match(html, /age >= -5 \* 60 \* 1000/);
 });
 
+test("スマホでも投稿済み操作を表示し、最優先の週間まとめを作れる", () => {
+  const html = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
+  assert.match(html, /id="weeklyDigest"[^>]*>◎最優先の週間まとめ/);
+  assert.match(html, /id="markAllPosted"[^>]*>表示中を投稿済み/);
+  assert.match(html, /id="clearPosted"[^>]*>投稿済みクリア/);
+  assert.doesNotMatch(html, /\.toolbar-row \.secondary-action\s*\{\s*display:\s*none/);
+  assert.match(html, /function weeklyPriorityItems[\s\S]*isWithinHours\(item, 168\)[\s\S]*postTier\(item\) === 0/);
+  assert.match(html, /function buildWeeklyDigestText/);
+  assert.match(html, /const WEEKLY_GPTS_URL = "https:\/\/chatgpt\.com\/g\/g-6a629ec2cb7c81919c4f72700a4839c6-liang-zi-zhou-jian-rehoto"/);
+  assert.match(html, /window\.open\(WEEKLY_GPTS_URL, "_blank"\)/);
+  assert.match(html, /スレッドには分割しないでください/);
+  assert.match(html, /投稿済みの記事も振り返り対象に含みます/);
+});
+
 test("Jina Reader URLは元URLを一度だけ連結する", () => {
   const { __test } = loadHelpers("netlify/functions/report.js", ["readerUrls"]);
   assert.deepEqual(
