@@ -439,13 +439,13 @@
           <div class="filter-group age-tabs">
             <span class="filter-label">投稿優先度</span>
             <button id="tierAll" class="primary" type="button">全部</button>
-            <button id="tier0" type="button">◎最優先</button>
-            <button id="tier1" type="button">◯検討</button>
-            <button id="tier2" type="button">△参考</button>
+            <button id="tier0" type="button">🚨速報</button>
+            <button id="tier1" type="button">✍投稿候補</button>
+            <button id="tier2" type="button">📚保管</button>
           </div>
         </div>
         <div class="utility-row" aria-label="まとめと投稿済み操作">
-          <button id="weeklyDigest" class="weekly-action" type="button">◎最優先の週間まとめ</button>
+          <button id="weeklyDigest" class="weekly-action" type="button">🚨速報の週間まとめ</button>
           <button id="markAllPosted" class="secondary-action" type="button">表示中を投稿済み</button>
           <button id="clearPosted" class="ghost secondary-action" type="button">投稿済みクリア</button>
         </div>
@@ -483,7 +483,7 @@
   </main>
 
   <script>
-    const APP_VERSION = "mobile-weekly-20260724";
+    const APP_VERSION = "editorial-priority-20260727";
     const PUBLIC_ORIGIN = "https://ionqnews.netlify.app";
     const GPTS_URL = "https://chatgpt.com/g/g-6a41a5264e6081918db223a3b8a4d808-liang-zi-rehoto";
     const WEEKLY_GPTS_URL = "https://chatgpt.com/g/g-6a629ec2cb7c81919c4f72700a4839c6-liang-zi-zhou-jian-rehoto";
@@ -502,6 +502,7 @@
       query: "",
       maxAgeHours: DEFAULT_MAX_AGE_HOURS,
       tier: "all",
+      candidateIds: new Set(),
       blockedSources: new Set(),
       allowedSources: new Set(),
       sourceStats: {},
@@ -672,22 +673,26 @@
     }
 
     // ============================================================
-    // 投稿ネタのすみわけ。優先度は記事自体の重要性で固定し、鮮度は公開時刻で別表示する。
-    // ◎最優先: IonQの決算・受注・買収・増資・重要SEC・格付けなど、株主が必ず確認する材料。
-    // ◯検討  : IonQの軽めの公式情報、競合の大材料、量子政策、主要マクロ材料。
-    // △参考  : 一般研究・解説・相場予想・内容の薄いまとめ記事。通知対象外。
+    // 投稿枠を使う価値で分類する。
+    // 速報    : 今日見落とすと困る、直接性・緊急性の高い材料。
+    // 投稿候補: 具体的な事実と投稿角度があり、直近24時間の上位5件に入る材料。
+    // 保管    : 既報・解説・重複・薄い言及など、後から参照できれば十分な材料。
     // ============================================================
+    function candidateKey(item) {
+      return String(item.id || item.url || item.title || "");
+    }
+
     function postTier(item) {
       const score = newsPriorityScore(item);
-      if (score >= 70) return 0;
-      if (score >= 50) return 1;
+      if (score >= 80) return 0;
+      if (score >= 60 && state.candidateIds.has(candidateKey(item))) return 1;
       return 2;
     }
 
     const TIER_META = {
-      0: { label: "◎最優先", border: "#0c756d", color: "#0c756d", bg: "#dff2ee" },
-      1: { label: "◯検討", border: "#4a76d3", color: "#2f52a0", bg: "#eaf0fb" },
-      2: { label: "△参考", border: "#c9cec6", color: "#8a938a", bg: "#f4f6f2" }
+      0: { label: "🚨速報", border: "#c9463d", color: "#9f2f28", bg: "#fde8e5" },
+      1: { label: "✍投稿候補", border: "#0c756d", color: "#0c756d", bg: "#dff2ee" },
+      2: { label: "📚保管", border: "#c9cec6", color: "#707970", bg: "#f4f6f2" }
     };
 
     function renderTierBadge(item) {
@@ -710,6 +715,16 @@
         return Date.parse(b.publishedAt || b.acceptedAt || 0) - Date.parse(a.publishedAt || a.acceptedAt || 0);
       });
       state.items = groupSimilarItems(fresh);
+      state.candidateIds = new Set(
+        state.items
+          .filter(function (item) {
+            const score = newsPriorityScore(item);
+            return score >= 60 && score < 80 && isWithinHours(item, 24);
+          })
+          .sort(compareNewsPriority)
+          .slice(0, 5)
+          .map(candidateKey)
+      );
       renderSummary(buildStats(valid, fresh));
     }
 
@@ -988,7 +1003,7 @@
       const rows = [
         "mode: weekly_digest",
         "対象期間: 直近7日間",
-        "依頼: 以下の◎最優先ニュースを重複整理し、重要度順に選んで、1つのX長文投稿として週間まとめを作成してください。",
+        "依頼: 以下の🚨速報ニュースを重複整理し、重要度順に選んで、1つのX長文投稿として週間まとめを作成してください。",
         "形式: ニュースごとに、日本語の見出し、100〜200字程度の要約、出典名、実記事URLを並べてください。スレッドには分割しないでください。"
       ];
       items.forEach(function (item, index) {
@@ -1011,14 +1026,14 @@
     async function createWeeklyDigest() {
       const items = weeklyPriorityItems();
       if (!items.length) {
-        el.copyStatus.innerHTML = "<span class=\"warn\">直近7日間に◎最優先ニュースがありません</span>";
-        alert("直近7日間に◎最優先ニュースがありません。");
+        el.copyStatus.innerHTML = "<span class=\"warn\">直近7日間に🚨速報ニュースがありません</span>";
+        alert("直近7日間に🚨速報ニュースがありません。");
         return;
       }
       const text = buildWeeklyDigestText(items);
       el.gptsText.value = text;
       el.detailHead.innerHTML = [
-        "<h2>◎最優先の週間まとめ</h2>",
+        "<h2>🚨速報の週間まとめ</h2>",
         "<div class=\"muted\">直近7日・重複整理後 " + items.length + " 件をGPTsへ渡します。投稿済みの記事も振り返り対象に含みます。</div>"
       ].join("");
       const opened = window.open(WEEKLY_GPTS_URL, "_blank");
@@ -1637,29 +1652,37 @@
       ].join(" ").toLowerCase();
     }
 
-    const HIGH_IMPACT_NEWS_RE = /earnings|revenue|guidance|quarterly results?|annual results?|contract|award|order|bookings?|backlog|multi[ -]year|definitive agreement|\$\s?\d[\d,.]*\s?(?:million|billion)|\d[\d,.]*\s?(?:million|billion) dollars|funding|financing|raises?|raised|offering|convertible|acquisition|merger|buyout|dilution|analyst|upgrade|downgrade|price target|rating|breakthrough|logical qubit|error correction|fault[ -]tolerant|quantum advantage|legislation|appropriation|government budget|executive order|national strategy|export controls?|federal reserve|\bfed\b|\bfomc\b|\bpowell\b|interest rates?|rate cut|rate hike|quantitative easing|quantitative tightening|inflation|consumer price index|producer price index|employment situation|job openings|gross domestic product|personal income and outlays|\bcpi\b|\bpce\b|\bgdp\b|payrolls?|jobs report|jobless claims|unemployment|retail sales|\bism\b|\bpmi\b|consumer confidence|treasury yields?|treasury auction|debt ceiling|government shutdown|recession|tariffs?|sanctions?|oil prices?|crude oil|\bvix\b|volatility index|credit spreads?|bank (?:crisis|failure)|liquidity crisis|market selloff|short seller/i;
-    const MATERIAL_NEWS_RE = /deal|partnership|strategic|collaboration|customer|deployment|government|defense|army|navy|air force|darpa|doe|nasa|commercial|production|data center|investment|stake/i;
+    const HIGH_IMPACT_NEWS_RE = /earnings|revenue|guidance|quarterly results?|annual results?|contract|award|order|bookings?|backlog|multi[ -]year|definitive agreement|\$\s?\d[\d,.]*\s?(?:million|billion)|\d[\d,.]*\s?(?:million|billion) dollars|funding|financing|raises?|raised|offering|convertible|acquisition|merger|buyout|dilution|upgrade|downgrade|price target|rating|breakthrough|logical qubit|error correction|fault[ -]tolerant|quantum advantage|legislation|appropriation|government budget|executive order|national strategy|export controls?|debt ceiling|government shutdown|short seller/i;
+    const MATERIAL_NEWS_RE = /deal|partnership|strategic|collaboration|customer|deployment|government|defense|army|navy|air force|darpa|doe|nasa|commercial|production|data center|investment|stake|analyst/i;
     const CRITICAL_MACRO_RE = /emergency rate cut|emergency rate hike|market crash|market selloff|bank (?:crisis|failure|collapse)|liquidity crisis|debt default|government shutdown begins|trading halt|vix (?:spikes?|surges?)/i;
+    const MARKET_MOVING_MACRO_RE = /(?:federal reserve|\bfed\b|\bfomc\b).*(?:cuts?|hikes?|holds?|decision|statement)|(?:rate cut|rate hike|interest rate decision)|consumer price index summary|producer price index summary|employment situation|jobs report|nonfarm payrolls?|gross domestic product|personal income and outlays|\bcpi\b.*(?:rises?|falls?|increases?|decreases?|\d)|\bpce\b.*(?:rises?|falls?|increases?|decreases?|\d)|\bgdp\b.*(?:growth|grows?|contracts?|beats?|misses?|\d)|unemployment.*(?:rises?|falls?|\d)|jobless claims.*(?:jumps?|rises?|falls?|drops?|\d)|treasury auction.*(?:weak|strong|yield|demand)|yields?.*(?:surges?|jumps?|spikes?)/i;
     const LOW_VALUE_NEWS_RE = /should you buy|is .* a buy|stock price prediction|price forecast|where will .* stock|why .* stock|could .* stock|millionaire.?maker|technical analysis|unusual options|options trading|short interest|wall street thinks|top \d+ .*stocks?/i;
+    const RECAP_NEWS_RE = /weekly (?:roundup|recap)|news roundup|year in review|look(?:ing)? back|revisited|what we (?:know|learned)|previously announced|earlier this (?:week|month|year)|last quarter|history of/i;
+    const PREVIEW_NEWS_RE = /what to expect|earnings preview|ahead of (?:earnings|results)|set to report|scheduled to (?:report|announce)|will report|earnings date|could announce|expected to announce/i;
     const PRIMARY_SOURCE_RE = /sec edgar|ionq ir|ionq公式|nasdaq\/ionq|business wire|globenewswire|pr newswire|\.gov\b|darpa|department of defense|department of energy|federal reserve|\bbls\b|bureau of labor statistics|\bbea\b|bureau of economic analysis/i;
 
     function heuristicPriorityScore(item) {
       const text = signalText(item);
       const category = String(item.category || "").toLowerCase();
-      const directIonq = category === "sec" || String(item.ticker || "").toUpperCase() === "IONQ" || /\bionq\b|\$ionq|ionq公式|ionq ir|nasdaq\/ionq/.test(text);
+      const ionqText = [item.title, item.description, item.companyName, item.ticker, item.source, item.url].join(" ").toLowerCase();
+      const directIonq = String(item.ticker || "").toUpperCase() === "IONQ" || /\bionq\b|\$ionq|ionq公式|ionq ir|nasdaq\/ionq/.test(ionqText);
+      const sourceText = [item.source, item.label, item.url].join(" ").toLowerCase();
       const form = String(item.form || "").toUpperCase();
       const importantForm = /^(8-K|10-Q|10-K|S-3|424B|13D|13G|SC 13|DEF 14A)/.test(form);
       const highImpact = HIGH_IMPACT_NEWS_RE.test(text) || importantForm;
       const material = highImpact || MATERIAL_NEWS_RE.test(text);
+      const primary = PRIMARY_SOURCE_RE.test(sourceText) || Boolean(item.form);
       let score = 0;
-      if (directIonq) score += 35;
-      if (highImpact) score += 35;
-      else if (material) score += 20;
-      if (PRIMARY_SOURCE_RE.test(text) || item.form) score += 15;
-      if ((category === "competitor" || category === "quantum") && material) score += 15;
-      if (category === "macro" && material) score += 15;
-      if (category === "macro" && CRITICAL_MACRO_RE.test(text)) score += 20;
-      if (LOW_VALUE_NEWS_RE.test(text)) score -= 40;
+      if (directIonq) score += 30;
+      if (highImpact) score += 40;
+      else if (material) score += 30;
+      if (primary) score += 15;
+      if ((category === "competitor" || category === "quantum") && material) score += 20;
+      if (category === "macro" && MARKET_MOVING_MACRO_RE.test(text)) score += 65;
+      if (category === "macro" && CRITICAL_MACRO_RE.test(text)) score = Math.max(score, 85);
+      if (LOW_VALUE_NEWS_RE.test(text)) score = Math.min(score - 45, 39);
+      if (RECAP_NEWS_RE.test(text)) score = Math.min(score, 49);
+      if (PREVIEW_NEWS_RE.test(text)) score = Math.min(score, 59);
       return Math.max(0, Math.min(100, score));
     }
 
@@ -1667,8 +1690,7 @@
       const base = Number(baseScore);
       const ai = Number(aiScore);
       if (!Number.isFinite(ai) || ai < 0 || ai > 100) return base;
-      if (base >= 70) return base;
-      return Math.max(0, Math.min(100, Math.round(base * 0.4 + ai * 0.6)));
+      return Math.max(0, Math.min(100, Math.round(base * 0.35 + ai * 0.65)));
     }
 
     function newsPriorityScore(item, nowValue) {
@@ -1683,13 +1705,16 @@
 
     function priorityReasons(item) {
       const text = signalText(item);
+      const ionqText = [item.title, item.description, item.companyName, item.ticker, item.source, item.url].join(" ").toLowerCase();
+      const sourceText = [item.source, item.label, item.url].join(" ").toLowerCase();
       const reasons = [];
-      if (item.category === "sec" || String(item.ticker || "").toUpperCase() === "IONQ" || /\bionq\b|\$ionq|ionq公式|ionq ir|nasdaq\/ionq/.test(text)) reasons.push("IonQ直結");
-      if (PRIMARY_SOURCE_RE.test(text) || item.form) reasons.push("一次情報");
+      if (String(item.ticker || "").toUpperCase() === "IONQ" || /\bionq\b|\$ionq|ionq公式|ionq ir|nasdaq\/ionq/.test(ionqText)) reasons.push("IonQ直結");
+      if (PRIMARY_SOURCE_RE.test(sourceText) || item.form) reasons.push("一次情報");
       const form = String(item.form || "").toUpperCase();
       if (HIGH_IMPACT_NEWS_RE.test(text) || /^(8-K|10-Q|10-K|S-3|424B|13D|13G|SC 13|DEF 14A)/.test(form)) reasons.push("重要材料");
       else if (MATERIAL_NEWS_RE.test(text)) reasons.push("関連材料");
       if (item.category === "macro") reasons.push("市場全体");
+      if (RECAP_NEWS_RE.test(text)) reasons.push("既報・振り返り");
       if (Number.isFinite(Number(item.aiPriorityScore))) reasons.push("AI確認済み");
       return Array.from(new Set(reasons)).slice(0, 3);
     }
