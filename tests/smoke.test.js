@@ -158,6 +158,16 @@ test("DiscordはIonQ直結の重要材料を優先し、薄い株価記事を除
   assert.ok(__test.newsPriorityScore(contract, now) > __test.newsPriorityScore(fluff, now));
   assert.ok(__test.compareNewsPriority(contract, fluff, now) < 0);
   assert.deepEqual(Array.from(__test.priorityReasonLabels(contract)), ["IonQ直結", "一次情報", "重要材料"]);
+
+  const mislabeled = {
+    title: "Upcoming and recent IPOs calendar",
+    source: "Yahoo Finance Singapore",
+    label: "IONQ速報",
+    category: "news",
+    publishedAt: "2026-07-17T11:30:00+09:00"
+  };
+  assert.equal(__test.isNotificationWorthy(mislabeled, now), false);
+  assert.equal(Array.from(__test.priorityReasonLabels(mislabeled)).includes("IonQ直結"), false);
 });
 
 test("投稿優先度は鮮度と分離し、時間経過だけでは変化しない", () => {
@@ -166,7 +176,7 @@ test("投稿優先度は鮮度と分離し、時間経過だけでは変化し�
   ]);
   const important = {
     title: "IonQ wins major government quantum computing contract",
-    source: "News Service",
+    source: "IonQ IR",
     category: "news",
     publishedAt: "2026-07-17T11:00:00+09:00"
   };
@@ -182,6 +192,14 @@ test("投稿優先度は鮮度と分離し、時間経過だけでは変化し�
   assert.equal(__test.isImmediateNews(important, "2026-07-17T12:00:00+09:00"), true);
   assert.equal(__test.isNotificationWorthy(mentionOnly, "2026-07-17T12:00:00+09:00"), false);
 
+  const recap = {
+    title: "Looking back at IonQ's quarterly results and revenue",
+    source: "Market Blog",
+    category: "news",
+    publishedAt: "2026-07-17T11:00:00+09:00"
+  };
+  assert.ok(__test.newsPriorityScore(recap, "2026-07-17T12:00:00+09:00") < 60);
+
   const skytUnrelated = {
     title: "SkyWater opens a manufacturing training program",
     source: "Nasdaq/SKYT",
@@ -192,12 +210,12 @@ test("投稿優先度は鮮度と分離し、時間経過だけでは変化し�
   assert.equal(__test.isNotificationWorthy(skytUnrelated, "2026-07-17T12:00:00+09:00"), false);
 });
 
-test("AI重要度は曖昧な記事だけを補正し、明白な最優先材料を格下げしない", () => {
+test("AI重要度は投稿価値を再評価し、速報候補も格下げできる", () => {
   const { __test } = loadHelpers("netlify/functions/watch-ionq.js", [
     "mergeAiPriorityScore", "parseAiPriorityResponse"
   ]);
-  assert.equal(__test.mergeAiPriorityScore(35, 85), 65);
-  assert.equal(__test.mergeAiPriorityScore(85, 10), 85);
+  assert.equal(__test.mergeAiPriorityScore(35, 85), 68);
+  assert.equal(__test.mergeAiPriorityScore(85, 10), 36);
   const parsed = __test.parseAiPriorityResponse('```json\n{"items":[{"id":"a","score":72,"reason":"大型契約"}]}\n```');
   assert.deepEqual(Array.from(parsed, (item) => ({ ...item })), [{ id: "a", score: 72, reason: "大型契約" }]);
 });
@@ -222,7 +240,7 @@ test("金融ニュースは米株を動かすマクロ材料だけを採用す�
   assert.equal(__test.isImportantMacroNews(macro), true);
   assert.equal(__test.isImportantMacroNews(unrelated), false);
   assert.equal(__test.isNotificationWorthy(macro, now), true);
-  assert.ok(__test.newsPriorityScore(macro, now) >= 50);
+  assert.ok(__test.newsPriorityScore(macro, now) >= 60);
 
   const officialCpi = {
     title: "Consumer Price Index Summary",
@@ -234,20 +252,20 @@ test("金融ニュースは米株を動かすマクロ材料だけを採用す�
   assert.equal(__test.isNotificationWorthy(officialCpi, now), true);
 
   const economicSignals = [
-    "US GDP growth beats forecasts as Nasdaq futures rise",
-    "Jobless claims jump and Wall Street stocks fall",
-    "Government shutdown fears rattle US markets",
-    "VIX spikes as technology stocks sell off",
-    "Weak Treasury auction pushes yields higher and pressures Nasdaq"
+    ["US GDP growth beats forecasts as Nasdaq futures rise", true],
+    ["Jobless claims jump and Wall Street stocks fall", true],
+    ["Government shutdown fears rattle US markets", false],
+    ["VIX spikes as technology stocks sell off", true],
+    ["Weak Treasury auction pushes yields higher and pressures Nasdaq", true]
   ];
-  economicSignals.forEach((title) => {
+  economicSignals.forEach(([title, shouldNotify]) => {
     const item = { title, source: "Financial News", category: "macro", publishedAt: macro.publishedAt };
     assert.equal(__test.isImportantMacroNews(item), true, title);
-    assert.equal(__test.isNotificationWorthy(item, now), true, title);
+    assert.equal(__test.isNotificationWorthy(item, now), shouldNotify, title);
   });
 });
 
-test("最重要は即通知、注目は朝夜まとめに分ける", () => {
+test("速報は即通知、投稿候補は朝夜まとめに分ける", () => {
   const { __test } = loadHelpers("netlify/functions/watch-ionq.js", [
     "isImmediateNews", "currentDigestSlot", "mergeDigestQueue"
   ]);
@@ -280,6 +298,13 @@ test("最重要は即通知、注目は朝夜まとめに分ける", () => {
   assert.equal(__test.currentDigestSlot("2026-07-17T11:00:00Z"), "2026-07-17-20");
   assert.equal(__test.currentDigestSlot("2026-07-17T12:00:00Z"), "");
   assert.equal(__test.mergeDigestQueue([], [macro, macro], now, new Set()).length, 1);
+  const candidates = Array.from({ length: 7 }, (_, index) => ({
+    ...macro,
+    id: `candidate-${index}`,
+    form: "TEST",
+    publishedAt: `2026-07-17T${String(11 - index).padStart(2, "0")}:00:00+09:00`
+  }));
+  assert.equal(__test.mergeDigestQueue([], candidates, now, new Set()).length, 5);
 });
 
 test("Discord通知は6件以上でも5件単位に分割して全件を残す", () => {
@@ -328,9 +353,9 @@ test("画面では日時不明の記事を新着扱いしない", () => {
   assert.match(html, /age >= -5 \* 60 \* 1000/);
 });
 
-test("スマホでも投稿済み操作を表示し、最優先の週間まとめを作れる", () => {
+test("スマホでも投稿済み操作を表示し、速報の週間まとめを作れる", () => {
   const html = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
-  assert.match(html, /id="weeklyDigest"[^>]*>◎最優先の週間まとめ/);
+  assert.match(html, /id="weeklyDigest"[^>]*>🚨速報の週間まとめ/);
   assert.match(html, /id="markAllPosted"[^>]*>表示中を投稿済み/);
   assert.match(html, /id="clearPosted"[^>]*>投稿済みクリア/);
   assert.doesNotMatch(html, /\.toolbar-row \.secondary-action\s*\{\s*display:\s*none/);
