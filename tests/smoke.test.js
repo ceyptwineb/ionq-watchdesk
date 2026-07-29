@@ -170,6 +170,33 @@ test("DiscordはIonQ直結の重要材料を優先し、薄い株価記事を除
   assert.equal(Array.from(__test.priorityReasonLabels(mislabeled)).includes("IonQ直結"), false);
 });
 
+test("IonQ買収企業の記事をグループ材料として識別する", () => {
+  const { __test } = loadHelpers("netlify/functions/watch-ionq.js", [
+    "matchIonqPortfolioCompany", "newsPriorityScore", "priorityReasonLabels"
+  ]);
+  const contract = {
+    title: "Capella Space wins multi-year defense satellite contract",
+    source: "Space News",
+    category: "portfolio",
+    companyName: "Capella Space",
+    ionqPortfolio: true,
+    publishedAt: "2026-07-17T11:00:00+09:00"
+  };
+  const routine = {
+    title: "Skyloom appoints a new human resources director",
+    source: "Company News",
+    category: "portfolio",
+    companyName: "Skyloom",
+    ionqPortfolio: true,
+    publishedAt: "2026-07-17T11:00:00+09:00"
+  };
+  assert.equal(__test.matchIonqPortfolioCompany(contract), "Capella Space");
+  assert.equal(__test.matchIonqPortfolioCompany({ title: "IDQ launches a new detector", source: "" }), "ID Quantique");
+  assert.ok(__test.newsPriorityScore(contract) >= 60);
+  assert.ok(__test.newsPriorityScore(routine) < 60);
+  assert.equal(Array.from(__test.priorityReasonLabels(contract))[0], "IonQグループ");
+});
+
 test("投稿優先度は鮮度と分離し、時間経過だけでは変化しない", () => {
   const { __test } = loadHelpers("netlify/functions/watch-ionq.js", [
     "newsPriorityScore", "isImmediateNews", "isNotificationWorthy"
