@@ -13,9 +13,12 @@ IonQ、量子業界、米国株に影響する重要経済ニュースを収集�
 ## 主な収集元
 
 - IonQ公式ニュースページ（Google Newsで補完）
+- IonQ買収企業・支配株取得先・買収手続き中企業（専用検索）
 - SEC EDGAR、Nasdaq銘柄RSS
 - Federal Reserve、BLS、BEA公式RSS
 - Google News、量子専門媒体RSS
+
+専用追跡企業: Qubitekk、ID Quantique、Lightsynq、Capella Space、Oxford Ionics、Vector Atomic、Skyloom、Seed Innovations、SkyWater Technology。
 
 ## 環境変数
 

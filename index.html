@@ -483,7 +483,7 @@
   </main>
 
   <script>
-    const APP_VERSION = "editorial-priority-20260727";
+    const APP_VERSION = "ionq-portfolio-watch-20260730";
     const PUBLIC_ORIGIN = "https://ionqnews.netlify.app";
     const GPTS_URL = "https://chatgpt.com/g/g-6a41a5264e6081918db223a3b8a4d808-liang-zi-rehoto";
     const WEEKLY_GPTS_URL = "https://chatgpt.com/g/g-6a629ec2cb7c81919c4f72700a4839c6-liang-zi-zhou-jian-rehoto";
@@ -647,6 +647,7 @@
       addRows(rows, data.officialNews, "ir", "最新IR", "IR");
       addRows(rows, data.sec, "sec", "重要SEC", "SEC");
       addRows(rows, data.marketNews, "news", "IONQ NEWS", "NEWS");
+      addRows(rows, data.portfolioNews, "portfolio", "IonQグループ", "PNEWS");
       addRows(rows, data.macroNews, "macro", "金融・マクロ", "MNEWS");
       addRows(rows, data.quantumNews, "quantum", "量子業界", "QNEWS");
       addRows(rows, data.competitorSec, "competitor", "競合SEC", "CSEC");
@@ -1407,6 +1408,14 @@
       ["qbts", /\bd-wave\b|\bdwave\b|\bqbts\b/],
       ["qubt", /\bqubt\b|\bquantum computing inc\b/],
       ["skyt", /\bskywater\b|\bskyt\b/],
+      ["qubitekk", /\bqubitekk\b/],
+      ["idq", /\bid quantique\b|\bidq\b/],
+      ["lightsynq", /\blightsynq\b|\blightsync technologies\b/],
+      ["capella", /\bcapella space\b/],
+      ["oxford-ionics", /\boxford ionics\b/],
+      ["vector-atomic", /\bvector atomic\b/],
+      ["skyloom", /\bskyloom(?: global)?\b/],
+      ["seed-innovations", /\bseed innovations\b/],
       ["quantinuum", /\bquantinuum\b/],
       ["ibm", /\bibm\b/],
       ["googl", /\bgoogle\b|\balphabet\b/],
@@ -1665,7 +1674,7 @@
       const text = signalText(item);
       const category = String(item.category || "").toLowerCase();
       const ionqText = [item.title, item.description, item.companyName, item.ticker, item.source, item.url].join(" ").toLowerCase();
-      const directIonq = String(item.ticker || "").toUpperCase() === "IONQ" || /\bionq\b|\$ionq|ionq公式|ionq ir|nasdaq\/ionq/.test(ionqText);
+      const directIonq = Boolean(item.ionqPortfolio) || String(item.ticker || "").toUpperCase() === "IONQ" || /\bionq\b|\$ionq|ionq公式|ionq ir|nasdaq\/ionq/.test(ionqText);
       const sourceText = [item.source, item.label, item.url].join(" ").toLowerCase();
       const form = String(item.form || "").toUpperCase();
       const importantForm = /^(8-K|10-Q|10-K|S-3|424B|13D|13G|SC 13|DEF 14A)/.test(form);
@@ -1708,7 +1717,8 @@
       const ionqText = [item.title, item.description, item.companyName, item.ticker, item.source, item.url].join(" ").toLowerCase();
       const sourceText = [item.source, item.label, item.url].join(" ").toLowerCase();
       const reasons = [];
-      if (String(item.ticker || "").toUpperCase() === "IONQ" || /\bionq\b|\$ionq|ionq公式|ionq ir|nasdaq\/ionq/.test(ionqText)) reasons.push("IonQ直結");
+      if (item.ionqPortfolio) reasons.push("IonQグループ");
+      else if (String(item.ticker || "").toUpperCase() === "IONQ" || /\bionq\b|\$ionq|ionq公式|ionq ir|nasdaq\/ionq/.test(ionqText)) reasons.push("IonQ直結");
       if (PRIMARY_SOURCE_RE.test(sourceText) || item.form) reasons.push("一次情報");
       const form = String(item.form || "").toUpperCase();
       if (HIGH_IMPACT_NEWS_RE.test(text) || /^(8-K|10-Q|10-K|S-3|424B|13D|13G|SC 13|DEF 14A)/.test(form)) reasons.push("重要材料");
