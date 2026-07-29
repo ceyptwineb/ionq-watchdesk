@@ -11,6 +11,26 @@
 const SEC_CIK = "0001824920";
 const COMPETITOR_TICKERS = ["RGTI", "QBTS", "QUBT", "IBM", "GOOGL", "MSFT", "AMZN", "HON", "NVDA"];
 
+// IonQが買収・支配株取得した企業と、買収手続き中の企業。
+// 各社の記事はIonQ/quantumを含まないことが多いため、通常の量子検索とは別に追跡する。
+const IONQ_PORTFOLIO_COMPANIES = [
+  { name: "Qubitekk", pattern: /\bqubitekk\b/i },
+  { name: "ID Quantique", pattern: /\bid quantique\b|\bidq\b/i },
+  { name: "Lightsynq", pattern: /\blightsynq\b|\blightsync technologies\b/i },
+  { name: "Capella Space", pattern: /\bcapella space\b/i },
+  { name: "Oxford Ionics", pattern: /\boxford ionics\b/i },
+  { name: "Vector Atomic", pattern: /\bvector atomic\b/i },
+  { name: "Skyloom", pattern: /\bskyloom(?: global)?\b/i },
+  { name: "Seed Innovations", pattern: /\bseed innovations\b/i },
+  { name: "SkyWater Technology", pattern: /\bskywater(?: technology)?\b|\bskyt\b/i }
+];
+
+const IONQ_PORTFOLIO_QUERIES = [
+  '"Qubitekk" OR "ID Quantique" OR "Lightsynq" OR "Oxford Ionics"',
+  '"Capella Space" OR "Vector Atomic" OR "Skyloom Global" OR "Seed Innovations"',
+  '"SkyWater Technology" OR SKYT'
+];
+
 // ワイヤー配信をほぼリアルタイムで中継する銘柄別フィード。
 // SKYTは買収クローズまで実質IonQ関連の一次情報源。
 const WIRE_FEEDS = [
@@ -243,13 +263,14 @@ exports.handler = async (event = {}, context = {}) => {
 // ---------------------------------------------------------------- 収集
 
 async function collectLatest() {
-  const [sec, wireNews, speedNews, officialNews, marketNews, macroNews, quantumNews, competitorSec, competitorNews] = await Promise.all([
+  const [sec, wireNews, speedNews, officialNews, marketNews, portfolioNews, macroNews, quantumNews, competitorSec, competitorNews] = await Promise.all([
     safe(() => getSecFilings(), "sec"),
     safe(() => getWireNews(), "wire"),
     // 速報クエリ: when:1d は新着が上に来やすい
     safe(() => getGoogleNews("IonQ OR IONQ", "1d"), "speed"),
     safe(() => getOfficialIonqNews(), "official"),
     safe(() => getGoogleNews("IONQ OR $IONQ", "7d"), "market"),
+    safe(() => getIonqPortfolioNews(), "portfolio"),
     safe(() => getMacroNews(), "macro"),
     safe(() => getQuantumNews(), "quantum"),
     safe(() => getCompetitorSecFilings(), "csec"),
@@ -262,13 +283,14 @@ async function collectLatest() {
     speedNews: speedNews.value,
     officialNews: officialNews.value,
     marketNews: marketNews.value,
+    portfolioNews: portfolioNews.value,
     macroNews: macroNews.value,
     quantumNews: quantumNews.value,
     competitorSec: competitorSec.value,
     competitorNews: competitorNews.value,
     stats: {
       sec: sourceStat(sec), wire: sourceStat(wireNews), speed: sourceStat(speedNews),
-      official: sourceStat(officialNews), market: sourceStat(marketNews), macro: sourceStat(macroNews),
+      official: sourceStat(officialNews), market: sourceStat(marketNews), portfolio: sourceStat(portfolioNews), macro: sourceStat(macroNews),
       quantum: sourceStat(quantumNews), csec: sourceStat(competitorSec), cnews: sourceStat(competitorNews)
     }
   };
@@ -424,6 +446,26 @@ async function getIonqNewsPage() {
   });
   if (!response.ok) throw new Error(`official_${response.status}`);
   return parseIonqOfficialHtml(await response.text());
+}
+
+async function getIonqPortfolioNews() {
+  const batches = await Promise.all(
+    IONQ_PORTFOLIO_QUERIES.map((query) => safeGetGoogleNews(query, "7d"))
+  );
+  return dedupeItems(batches.flat())
+    .map((item) => {
+      const companyName = matchIonqPortfolioCompany(item);
+      return companyName ? { ...item, companyName, ionqPortfolio: true } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => Date.parse(b.publishedAt || 0) - Date.parse(a.publishedAt || 0))
+    .slice(0, 30);
+}
+
+function matchIonqPortfolioCompany(item) {
+  const text = `${item && item.title || ""} ${item && item.source || ""}`;
+  const company = IONQ_PORTFOLIO_COMPANIES.find((entry) => entry.pattern.test(text));
+  return company ? company.name : "";
 }
 
 function parseIonqOfficialHtml(html) {
@@ -603,6 +645,20 @@ function normalizeLatestItems(data) {
     publishedAt: item.publishedAt
   })));
 
+  (data.portfolioNews || []).forEach((item) => items.push(withId({
+    type: "PNEWS",
+    category: "portfolio",
+    label: "IonQグループ",
+    title: item.title,
+    url: item.url,
+    source: item.source || item.companyName || "IonQ Group News",
+    kind: "買収企業",
+    companyName: item.companyName || matchIonqPortfolioCompany(item),
+    ionqPortfolio: true,
+    parentTicker: "IONQ",
+    publishedAt: item.publishedAt
+  })));
+
   (data.macroNews || []).forEach((item) => items.push(withId({
     type: "MNEWS",
     category: "macro",
@@ -762,7 +818,7 @@ function isExcludedSource(item) {
 
 // Nasdaq銘柄別RSSは対象銘柄と無関係な記事(WDAY/AGYS/AMAT等)も流してくるため、
 // 追跡銘柄名か量子ワードをタイトルに含まないワイヤー記事は捨てる。
-const TRACKED_COMPANY_RE = /quantum|qubit|qpu|ionq|rigetti|d-wave|dwave|quantinuum|\bqubt\b|skywater|\bskyt\b/i;
+const TRACKED_COMPANY_RE = /quantum|qubit|qpu|ionq|rigetti|d-wave|dwave|quantinuum|\bqubt\b|skywater|\bskyt\b|qubitekk|id quantique|lightsynq|capella space|oxford ionics|vector atomic|skyloom|seed innovations/i;
 
 function isIrrelevantWire(item) {
   if (item.label !== "ワイヤー速報" && item.label !== "競合速報") return false;
@@ -786,6 +842,14 @@ const TICKER_PATTERNS = [
   ["qbts", /\bd-wave\b|\bdwave\b|\bqbts\b/],
   ["qubt", /\bqubt\b|\bquantum computing inc\b/],
   ["skyt", /\bskywater\b|\bskyt\b/],
+  ["qubitekk", /\bqubitekk\b/],
+  ["idq", /\bid quantique\b|\bidq\b/],
+  ["lightsynq", /\blightsynq\b|\blightsync technologies\b/],
+  ["capella", /\bcapella space\b/],
+  ["oxford-ionics", /\boxford ionics\b/],
+  ["vector-atomic", /\bvector atomic\b/],
+  ["skyloom", /\bskyloom(?: global)?\b/],
+  ["seed-innovations", /\bseed innovations\b/],
   ["quantinuum", /\bquantinuum\b/],
   ["ibm", /\bibm\b/],
   ["googl", /\bgoogle\b|\balphabet\b/],
@@ -955,7 +1019,7 @@ async function applyAiPriority(items, deadlineAt) {
           messages: [
             {
               role: "system",
-              content: "You are the editor of an IonQ shareholder news desk. Return JSON only: {\"items\":[{\"id\":\"...\",\"score\":0-100,\"reason\":\"short Japanese reason\"}]}. Judge whether the account should spend a posting slot on the story, not whether it merely contains important-sounding words. Score 80+ only when missing it today would leave an IonQ shareholder uninformed: material IonQ company events, exceptional quantum-industry shifts, or true US-market shocks. Score 60-79 only when there is a concrete verified fact, a clear IonQ/quantum/US-stock implication, a distinct posting angle, and a reason to post today or this week. Score below 60 for recaps, previews, duplicates, commentary, predictions, vague mentions, routine partnerships, and low-information articles. A recap or preview cannot exceed 59. You may downgrade any heuristic score. Do not invent facts beyond the supplied title/source."
+              content: "You are the editor of an IonQ shareholder news desk. Return JSON only: {\"items\":[{\"id\":\"...\",\"score\":0-100,\"reason\":\"short Japanese reason\"}]}. Judge whether the account should spend a posting slot on the story, not whether it merely contains important-sounding words. Category portfolio means an acquired IonQ company or pending acquisition, so its contracts, products, government work, technology milestones, financial results, and major management changes can directly matter to IonQ even when the title omits IonQ. Score 80+ only when missing it today would leave an IonQ shareholder uninformed: material IonQ company events, exceptional quantum-industry shifts, or true US-market shocks. Score 60-79 only when there is a concrete verified fact, a clear IonQ/quantum/US-stock implication, a distinct posting angle, and a reason to post today or this week. Score below 60 for recaps, previews, duplicates, commentary, predictions, vague mentions, routine personnel news, routine partnerships, and low-information articles. A recap or preview cannot exceed 59. You may downgrade any heuristic score. Do not invent facts beyond the supplied title/source."
             },
             {
               role: "user",
@@ -964,6 +1028,8 @@ async function applyAiPriority(items, deadlineAt) {
                 title: item.title,
                 source: item.source,
                 category: item.category,
+                companyName: item.companyName || "",
+                ionqPortfolio: Boolean(item.ionqPortfolio),
                 heuristicScore: heuristicPriorityScore(item)
               })))
             }
@@ -1024,9 +1090,9 @@ async function applyTranslations(items, deadlineAt = Date.now() + 8000) {
   }
 
   // 表示対象(7日以内)を翻訳する。優先順位:
-  // IONQ直結(ir/news) → SEC → 競合 → 量子業界の順。同カテゴリ内は新しい順。
+  // IONQ直結(ir/news) → IonQグループ → マクロ → SEC → 競合 → 量子業界の順。
   // 「優先度を日本語で判断する」用途なので、IONQに効くものから訳す。
-  const CATEGORY_PRIORITY = { ir: 0, news: 1, macro: 2, sec: 3, competitor: 4, quantum: 5 };
+  const CATEGORY_PRIORITY = { ir: 0, news: 1, portfolio: 2, macro: 3, sec: 4, competitor: 5, quantum: 6 };
   const windowMs = 7 * 24 * 60 * 60 * 1000;
   const targets = items.filter((item) => {
     if (item.form) return false; // SECは下の静的マップで日本語化
@@ -1237,7 +1303,7 @@ function heuristicPriorityScore(item) {
   const text = `${item.title || ""} ${item.source || ""} ${item.label || ""} ${item.description || ""}`.toLowerCase();
   const category = String(item.category || "").toLowerCase();
   const ionqText = `${item.title || ""} ${item.description || ""} ${item.companyName || ""} ${item.ticker || ""} ${item.source || ""} ${item.url || ""}`.toLowerCase();
-  const directIonq = String(item.ticker || "").toUpperCase() === "IONQ" || /\bionq\b|\$ionq|ionq公式|ionq ir|nasdaq\/ionq/.test(ionqText);
+  const directIonq = Boolean(item.ionqPortfolio) || String(item.ticker || "").toUpperCase() === "IONQ" || /\bionq\b|\$ionq|ionq公式|ionq ir|nasdaq\/ionq/.test(ionqText);
   const sourceText = `${item.source || ""} ${item.label || ""} ${item.url || ""}`.toLowerCase();
   const highImpact = HIGH_IMPACT_NEWS_RE.test(text) || isImportantSec(item);
   const material = highImpact || MATERIAL_NEWS_RE.test(text);
@@ -1289,7 +1355,8 @@ function priorityReasonLabels(item) {
   const ionqText = `${item.title || ""} ${item.description || ""} ${item.companyName || ""} ${item.ticker || ""} ${item.source || ""} ${item.url || ""}`.toLowerCase();
   const sourceText = `${item.source || ""} ${item.label || ""} ${item.url || ""}`.toLowerCase();
   const reasons = [];
-  if (String(item.ticker || "").toUpperCase() === "IONQ" || /\bionq\b|\$ionq|ionq公式|ionq ir|nasdaq\/ionq/.test(ionqText)) reasons.push("IonQ直結");
+  if (item.ionqPortfolio) reasons.push("IonQグループ");
+  else if (String(item.ticker || "").toUpperCase() === "IONQ" || /\bionq\b|\$ionq|ionq公式|ionq ir|nasdaq\/ionq/.test(ionqText)) reasons.push("IonQ直結");
   if (PRIMARY_SOURCE_RE.test(sourceText) || item.form) reasons.push("一次情報");
   if (HIGH_IMPACT_NEWS_RE.test(text) || isImportantSec(item)) reasons.push("重要材料");
   else if (MATERIAL_NEWS_RE.test(text)) reasons.push("関連材料");
