@@ -9,7 +9,7 @@
 // - getXPosts(未使用)を削除
 
 const SEC_CIK = "0001824920";
-const COMPETITOR_TICKERS = ["RGTI", "QBTS", "QUBT", "IBM", "GOOGL", "MSFT", "AMZN", "HON", "NVDA"];
+const COMPETITOR_TICKERS = ["QNT", "RGTI", "QBTS", "QUBT", "IBM", "GOOGL", "MSFT", "AMZN", "HON", "NVDA"];
 
 // IonQが買収・支配株取得した企業と、買収手続き中の企業。
 // 各社の記事はIonQ/quantumを含まないことが多いため、通常の量子検索とは別に追跡する。
@@ -38,7 +38,8 @@ const WIRE_FEEDS = [
   { source: "Nasdaq/SKYT", ticker: "SKYT", url: "https://www.nasdaq.com/feed/rssoutbound?symbol=SKYT", type: "IR" },
   { source: "Nasdaq/RGTI", ticker: "RGTI", url: "https://www.nasdaq.com/feed/rssoutbound?symbol=RGTI", type: "CNEWS" },
   { source: "Nasdaq/QBTS", ticker: "QBTS", url: "https://www.nasdaq.com/feed/rssoutbound?symbol=QBTS", type: "CNEWS" },
-  { source: "Nasdaq/QUBT", ticker: "QUBT", url: "https://www.nasdaq.com/feed/rssoutbound?symbol=QUBT", type: "CNEWS" }
+  { source: "Nasdaq/QUBT", ticker: "QUBT", url: "https://www.nasdaq.com/feed/rssoutbound?symbol=QUBT", type: "CNEWS" },
+  { source: "Nasdaq/QNT", ticker: "QNT", url: "https://www.nasdaq.com/feed/rssoutbound?symbol=QNT", type: "CNEWS" }
 ];
 
 const QUANTUM_RSS_FEEDS = [
@@ -274,7 +275,7 @@ async function collectLatest() {
     safe(() => getMacroNews(), "macro"),
     safe(() => getQuantumNews(), "quantum"),
     safe(() => getCompetitorSecFilings(), "csec"),
-    safe(() => getGoogleNews("(Rigetti OR RGTI OR D-Wave OR QBTS OR \"Quantum Computing Inc\" OR QUBT OR Quantinuum OR \"IBM quantum\" OR \"Google quantum\" OR \"Microsoft quantum\" OR \"AWS Braket\" OR \"NVIDIA quantum\")", "7d"), "cnews")
+    safe(() => getGoogleNews("(Rigetti OR RGTI OR D-Wave OR QBTS OR \"Quantum Computing Inc\" OR QUBT OR Quantinuum OR (QNT \"quantum computing\") OR \"IBM quantum\" OR \"Google quantum\" OR \"Microsoft quantum\" OR \"AWS Braket\" OR \"NVIDIA quantum\")", "7d"), "cnews")
   ]);
 
   return {
@@ -540,7 +541,9 @@ async function getQuantumNews() {
     "\"quantum computing\" OR \"quantum computer\" OR \"quantum technology\" -IONQ -$IONQ",
     "\"quantum computing\" (startup OR funding OR partnership OR contract OR government OR defense)",
     "\"quantum computing stocks\" (analyst OR rating OR upgrade OR downgrade OR price target OR investor)",
-    "\"quantum error correction\" OR \"logical qubit\" OR \"ion trap\" OR \"superconducting qubit\""
+    "\"quantum error correction\" OR \"logical qubit\" OR \"ion trap\" OR \"superconducting qubit\"",
+    "\"quantum fidelity\" OR \"two-qubit gate\" OR \"below threshold\" OR \"magic state\" OR \"quantum interconnect\"",
+    "Quantinuum OR (QNT \"quantum computing\")"
   ];
 
   const batches = await Promise.all([
@@ -818,7 +821,7 @@ function isExcludedSource(item) {
 
 // Nasdaq銘柄別RSSは対象銘柄と無関係な記事(WDAY/AGYS/AMAT等)も流してくるため、
 // 追跡銘柄名か量子ワードをタイトルに含まないワイヤー記事は捨てる。
-const TRACKED_COMPANY_RE = /quantum|qubit|qpu|ionq|rigetti|d-wave|dwave|quantinuum|\bqubt\b|skywater|\bskyt\b|qubitekk|id quantique|lightsynq|capella space|oxford ionics|vector atomic|skyloom|seed innovations/i;
+const TRACKED_COMPANY_RE = /quantum|qubit|qpu|ionq|rigetti|d-wave|dwave|quantinuum|\bqnt\b|\bqubt\b|skywater|\bskyt\b|qubitekk|id quantique|lightsynq|capella space|oxford ionics|vector atomic|skyloom|seed innovations/i;
 
 function isIrrelevantWire(item) {
   if (item.label !== "ワイヤー速報" && item.label !== "競合速報") return false;
@@ -838,6 +841,7 @@ function isIrrelevantWire(item) {
 const TITLE_STOPWORDS = new Set(["the", "a", "an", "of", "to", "in", "on", "for", "and", "or", "is", "are", "as", "at", "its", "with", "by", "from"]);
 const TICKER_PATTERNS = [
   ["ionq", /\bionq\b/],
+  ["qnt", /\bquantinuum\b|(?=.*\bqnt\b)(?=.*\b(?:quantum|qubit|qpu)\b)/],
   ["rgti", /\brigetti\b|\brgti\b/],
   ["qbts", /\bd-wave\b|\bdwave\b|\bqbts\b/],
   ["qubt", /\bqubt\b|\bquantum computing inc\b/],
@@ -980,6 +984,31 @@ function isQuantumRelevant(item) {
   return /quantum|qubit|qubits|ion trap|trapped ion|superconducting|photonic|annealing|qpu|qiskit|braket|cuda-q|quantinuum|rigetti|d-wave|pasqal|quera|atom computing|alice & bob|xanadu|institutional investor|hedge fund|asset manager|etf|holdings|stake|portfolio|analyst|price target|upgrade|downgrade|rating/.test(text);
 }
 
+const TECHNICAL_SCOPE_RE = /quantum|qubit|qpu|ion trap|trapped ion|superconducting|photonic|neutral atom|annealing|quantinuum|rigetti|d-wave|pasqal|quera|xanadu/i;
+const TECHNICAL_MILESTONE_RE = /breakthrough|milestone|first-ever|record|demonstrat(?:e|es|ed|ion)|achiev(?:e|es|ed)|quantum advantage|quantum supremacy|fault[ -]tolerant|logical qubit|below threshold/i;
+const TECHNICAL_SCALING_RE = /error correction|qec|logical qubit|code distance|magic state|fidelity|two[ -]qubit gate|gate error|scal(?:e|es|ed|ing|able)|modular|interconnect|distributed quantum|quantum network|photonic link|cryogenic control|all-to-all connectivity/i;
+const TECHNICAL_EVIDENCE_RE = /experiment|experimental|peer[ -]review|published|paper|preprint|arxiv|nature|science|university|researchers?|benchmark|measured|fidelity|error rate|\d+(?:\.\d+)?%/i;
+const TECHNICAL_BREADTH_RE = /hardware|architecture|processor|system|platform|compiler|algorithm|network|sensing|cryptography|materials?|drug discovery|industrial/i;
+const TECHNICAL_HYPE_RE = /could|might|may |potential(?:ly)?|opinion|prediction|roadmap|plans? to|aims? to|expects? to/i;
+
+function technicalImportanceScore(item) {
+  const text = `${item && item.title || ""} ${item && item.source || ""} ${item && item.description || ""}`.toLowerCase();
+  const category = String(item && item.category || "").toLowerCase();
+  if ((category !== "quantum" && category !== "competitor") || !TECHNICAL_SCOPE_RE.test(text)) return 0;
+  let score = 0;
+  if (TECHNICAL_MILESTONE_RE.test(text)) score += 30;
+  if (TECHNICAL_SCALING_RE.test(text)) score += 25;
+  if (TECHNICAL_EVIDENCE_RE.test(text)) score += 20;
+  if (TECHNICAL_BREADTH_RE.test(text)) score += 15;
+  if (PRIMARY_SOURCE_RE.test(`${item.source || ""} ${item.url || ""}`) || /nature|science|university|arxiv/i.test(text)) score += 10;
+  if (TECHNICAL_HYPE_RE.test(text) && !TECHNICAL_EVIDENCE_RE.test(text)) score = Math.min(score, 59);
+  return Math.max(0, Math.min(100, score));
+}
+
+function isImportantQuantumTechnology(item) {
+  return technicalImportanceScore(item) >= 65;
+}
+
 // ---------------------------------------------------------------- 任意のAI重要度判定(結果キャッシュ付き)
 
 async function applyAiPriority(items, deadlineAt) {
@@ -1019,7 +1048,7 @@ async function applyAiPriority(items, deadlineAt) {
           messages: [
             {
               role: "system",
-              content: "You are the editor of an IonQ shareholder news desk. Return JSON only: {\"items\":[{\"id\":\"...\",\"score\":0-100,\"reason\":\"short Japanese reason\"}]}. Judge whether the account should spend a posting slot on the story, not whether it merely contains important-sounding words. Category portfolio means an acquired IonQ company or pending acquisition, so its contracts, products, government work, technology milestones, financial results, and major management changes can directly matter to IonQ even when the title omits IonQ. Score 80+ only when missing it today would leave an IonQ shareholder uninformed: material IonQ company events, exceptional quantum-industry shifts, or true US-market shocks. Score 60-79 only when there is a concrete verified fact, a clear IonQ/quantum/US-stock implication, a distinct posting angle, and a reason to post today or this week. Score below 60 for recaps, previews, duplicates, commentary, predictions, vague mentions, routine personnel news, routine partnerships, and low-information articles. A recap or preview cannot exceed 59. You may downgrade any heuristic score. Do not invent facts beyond the supplied title/source."
+              content: "You are the editor of an IonQ shareholder news desk. Return JSON only: {\"items\":[{\"id\":\"...\",\"score\":0-100,\"reason\":\"short Japanese reason\"}]}. Judge on two independent lanes: investor materiality and quantum-technology importance. A technically important result can score 80+ even without immediate stock impact when it materially advances error correction, logical qubits, fidelity, scaling, modularity, interconnects, or demonstrated quantum advantage and has credible experimental evidence. Category portfolio means an acquired IonQ company or pending acquisition, so its contracts, products, government work, technology milestones, financial results, and major management changes can directly matter to IonQ even when the title omits IonQ. Score 80+ only when missing it today would leave an IonQ shareholder or serious quantum follower uninformed: material IonQ company events, exceptional quantum-industry shifts, credible technical milestones, or true US-market shocks. Score 60-79 only when there is a concrete verified fact, a clear IonQ/quantum/US-stock implication, a distinct posting angle, and a reason to post today or this week. Score below 60 for recaps, previews, duplicates, commentary, predictions, vague mentions, routine personnel news, routine partnerships, and low-information articles. A recap or preview cannot exceed 59. You may downgrade any heuristic score. Do not invent facts beyond the supplied title/source."
             },
             {
               role: "user",
@@ -1089,10 +1118,9 @@ async function applyTranslations(items, deadlineAt = Date.now() + 8000) {
     console.warn("translate cache read failed:", error.message);
   }
 
-  // 表示対象(7日以内)を翻訳する。優先順位:
-  // IONQ直結(ir/news) → IonQグループ → マクロ → SEC → 競合 → 量子業界の順。
-  // 「優先度を日本語で判断する」用途なので、IONQに効くものから訳す。
-  const CATEGORY_PRIORITY = { ir: 0, news: 1, portfolio: 2, macro: 3, sec: 4, competitor: 5, quantum: 6 };
+  // 表示対象(7日以内)を翻訳する。重要度を先に見て、同点ならカテゴリ順。
+  // 技術記事が投資記事の後ろで翻訳枠を失わないようにする。
+  const CATEGORY_PRIORITY = { ir: 0, news: 1, portfolio: 2, quantum: 3, macro: 4, sec: 5, competitor: 6 };
   const windowMs = 7 * 24 * 60 * 60 * 1000;
   const targets = items.filter((item) => {
     if (item.form) return false; // SECは下の静的マップで日本語化
@@ -1102,6 +1130,7 @@ async function applyTranslations(items, deadlineAt = Date.now() + 8000) {
   });
   // itemsは新着順ソート済み。stable sortなので同カテゴリ内の新着順は保たれる。
   targets.sort((a, b) =>
+    newsPriorityScore(b) - newsPriorityScore(a) ||
     (CATEGORY_PRIORITY[a.category] !== undefined ? CATEGORY_PRIORITY[a.category] : 9) -
     (CATEGORY_PRIORITY[b.category] !== undefined ? CATEGORY_PRIORITY[b.category] : 9)
   );
@@ -1297,7 +1326,7 @@ const MARKET_MOVING_MACRO_RE = /(?:federal reserve|\bfed\b|\bfomc\b).*(?:cuts?|h
 const LOW_VALUE_NEWS_RE = /should you buy|is .* a buy|stock price prediction|price forecast|where will .* stock|why .* stock|could .* stock|millionaire.?maker|technical analysis|unusual options|options trading|short interest|wall street thinks|top \d+ .*stocks?/i;
 const RECAP_NEWS_RE = /weekly (?:roundup|recap)|news roundup|year in review|look(?:ing)? back|revisited|what we (?:know|learned)|previously announced|earlier this (?:week|month|year)|last quarter|history of/i;
 const PREVIEW_NEWS_RE = /what to expect|earnings preview|ahead of (?:earnings|results)|set to report|scheduled to (?:report|announce)|will report|earnings date|could announce|expected to announce/i;
-const PRIMARY_SOURCE_RE = /sec edgar|ionq ir|ionq公式|nasdaq\/ionq|business wire|globenewswire|pr newswire|\.gov\b|darpa|department of defense|department of energy|federal reserve|\bbls\b|bureau of labor statistics|\bbea\b|bureau of economic analysis/i;
+const PRIMARY_SOURCE_RE = /sec edgar|ionq ir|ionq公式|quantinuum ir|nasdaq\/(?:ionq|qnt)|business wire|globenewswire|pr newswire|nature|science|arxiv|university|\.gov\b|darpa|department of defense|department of energy|federal reserve|\bbls\b|bureau of labor statistics|\bbea\b|bureau of economic analysis/i;
 
 function heuristicPriorityScore(item) {
   const text = `${item.title || ""} ${item.source || ""} ${item.label || ""} ${item.description || ""}`.toLowerCase();
@@ -1315,6 +1344,7 @@ function heuristicPriorityScore(item) {
   else if (material) score += 30;
   if (primary) score += 15;
   if ((category === "competitor" || category === "quantum") && material) score += 20;
+  score = Math.max(score, technicalImportanceScore(item));
   if (category === "macro" && MARKET_MOVING_MACRO_RE.test(text)) score += 65;
   if (category === "macro" && CRITICAL_MACRO_RE.test(text)) score = Math.max(score, 85);
   if (LOW_VALUE_NEWS_RE.test(text)) score = Math.min(score - 45, 39);
@@ -1360,6 +1390,7 @@ function priorityReasonLabels(item) {
   if (PRIMARY_SOURCE_RE.test(sourceText) || item.form) reasons.push("一次情報");
   if (HIGH_IMPACT_NEWS_RE.test(text) || isImportantSec(item)) reasons.push("重要材料");
   else if (MATERIAL_NEWS_RE.test(text)) reasons.push("関連材料");
+  if (isImportantQuantumTechnology(item)) reasons.push("技術重要");
   if (category === "macro") reasons.push("市場全体");
   if (RECAP_NEWS_RE.test(text)) reasons.push("既報・振り返り");
   if (Number.isFinite(Number(item.aiPriorityScore))) reasons.push("AI確認済み");
@@ -1377,7 +1408,12 @@ function mergeDigestQueue(existing, incoming, nowValue, postedIds = new Set()) {
     if (sameIndex < 0) queue.push(item);
     else if (compareNewsPriority(item, queue[sameIndex], now) < 0) queue[sameIndex] = item;
   });
-  return queue.sort((a, b) => compareNewsPriority(a, b, now)).slice(0, 5);
+  const sorted = queue.sort((a, b) => compareNewsPriority(a, b, now));
+  const selected = sorted.filter(isImportantQuantumTechnology).slice(0, 2);
+  sorted.forEach((item) => {
+    if (selected.length < 5 && !selected.includes(item)) selected.push(item);
+  });
+  return selected.sort((a, b) => compareNewsPriority(a, b, now));
 }
 
 function currentDigestSlot(nowValue) {
