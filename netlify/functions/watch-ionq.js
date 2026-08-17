@@ -854,7 +854,6 @@ const TICKER_PATTERNS = [
   ["vector-atomic", /\bvector atomic\b/],
   ["skyloom", /\bskyloom(?: global)?\b/],
   ["seed-innovations", /\bseed innovations\b/],
-  ["quantinuum", /\bquantinuum\b/],
   ["ibm", /\bibm\b/],
   ["googl", /\bgoogle\b|\balphabet\b/],
   ["msft", /\bmicrosoft\b/],
