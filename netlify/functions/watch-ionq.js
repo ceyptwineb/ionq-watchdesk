@@ -66,7 +66,9 @@ const TRANSLATE_KEY = "translate-cache";
 const AI_PRIORITY_KEY = "priority-ai-cache-v3";
 const GOOGLE_NEWS_LIMIT = 25;
 const MAX_TRANSLATE_PER_RUN = 30;
-const TRANSLATE_CONCURRENCY = 6;
+const TRANSLATE_CONCURRENCY = 2;
+const TRANSLATE_BATCH_SIZE = 20;
+const TRANSLATE_RETRY_BASE_MS = 15 * 60 * 1000;
 const MAX_NOTIFY_EMBEDS = 5;
 // 1時間Cronの遅延や一時的な取得失敗には余裕を持たせつつ、
 // 前日以前の記事を新着通知しない。
@@ -106,14 +108,14 @@ exports.handler = async (event = {}, context = {}) => {
     // 上書き前に前回キャッシュを確保(類似記事の再通知抑制に使う)
     const previousItems = await readCacheItems();
 
-    // キーワードだけでは判断しにくい記事を、API設定時のみ1バッチで意味判定する。
-    // 1.6秒で打ち切り、失敗時は従来スコアへそのままフォールバックする。
-    items = await applyAiPriority(items, Math.min(deadlineAt, Date.now() + 1600));
-
-    // 翻訳前に一度キャッシュを書く(翻訳中にタイムアウトしても表示は生きる)
+    // 翻訳をAI重要度判定より先に実行する。表示の日本語化を優先し、
+    // 重要度APIが遅い時でも翻訳時間を失わないようにする。
+    await writeCache({ updatedAt: startedAt, cachedAt: startedAt, items, sourceStats: collected.stats });
+    items = await applyTranslations(items, Math.min(deadlineAt, Date.now() + 3500));
     await writeCache({ updatedAt: startedAt, cachedAt: startedAt, items, sourceStats: collected.stats });
 
-    items = await applyTranslations(items, deadlineAt);
+    // キーワードだけでは判断しにくい記事を、残り時間がある時だけ意味判定する。
+    items = await applyAiPriority(items, Math.min(deadlineAt, Date.now() + 1600));
 
     await writeCache({
       updatedAt: startedAt,
@@ -1111,6 +1113,61 @@ function parseAiPriorityResponse(content) {
 
 // ---------------------------------------------------------------- 翻訳(Blobキャッシュ付き)
 
+async function translateBatchWithOpenAI(entries, deadlineAt) {
+  const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
+  if (!apiKey || !entries.length || Date.now() >= deadlineAt) return new Map();
+
+  const remaining = deadlineAt - Date.now();
+  if (remaining < 700) return new Map();
+
+  try {
+    const response = await fetchWithTimeout("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "authorization": `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: String(process.env.TRANSLATE_MODEL || process.env.PRIORITY_AI_MODEL || process.env.REPORT_MODEL || "gpt-4o-mini").trim(),
+        temperature: 0,
+        max_tokens: 2400,
+        response_format: { type: "json_object" },
+        messages: [
+          {
+            role: "system",
+            content: "Translate every supplied English news headline into natural, concise Japanese. Preserve company names, ticker symbols, numbers, and technical terms. Do not summarize, add facts, or omit entries. Return JSON only: {\"translations\":[{\"key\":\"...\",\"text\":\"...\"}]}."
+          },
+          {
+            role: "user",
+            content: JSON.stringify(entries.map((entry) => ({ key: entry.key, text: entry.title })))
+          }
+        ]
+      })
+    }, Math.max(700, Math.min(2500, remaining)));
+
+    if (!response.ok) throw new Error(`openai_translate_${response.status}`);
+    const payload = await response.json();
+    const content = String(payload?.choices?.[0]?.message?.content || "")
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/\s*```$/, "");
+    const parsed = JSON.parse(content);
+    const allowed = new Set(entries.map((entry) => entry.key));
+    const translated = new Map();
+
+    for (const row of Array.isArray(parsed.translations) ? parsed.translations : []) {
+      const key = String(row?.key || "");
+      const text = String(row?.text || "").trim();
+      if (allowed.has(key) && text && /[ぁ-んァ-ヶ一-龠]/.test(text)) translated.set(key, text);
+    }
+    return translated;
+  } catch (error) {
+    console.warn(`OpenAI translation fallback: ${error.message}`);
+    return new Map();
+  }
+}
+
+// ---------------------------------------------------------------- 翻訳(Blobキャッシュ付き)
+
 async function applyTranslations(items, deadlineAt = Date.now() + 8000) {
   let cache = {};
   try {
@@ -1122,16 +1179,14 @@ async function applyTranslations(items, deadlineAt = Date.now() + 8000) {
   }
 
   // 表示対象(7日以内)を翻訳する。重要度を先に見て、同点ならカテゴリ順。
-  // 技術記事が投資記事の後ろで翻訳枠を失わないようにする。
   const CATEGORY_PRIORITY = { ir: 0, news: 1, portfolio: 2, quantum: 3, macro: 4, sec: 5, competitor: 6 };
   const windowMs = 7 * 24 * 60 * 60 * 1000;
   const targets = items.filter((item) => {
-    if (item.form) return false; // SECは下の静的マップで日本語化
+    if (item.form) return false;
     if (!shouldTranslateTitle(item.title)) return false;
     const ms = Date.parse(item.publishedAt || item.acceptedAt || "");
     return !Number.isFinite(ms) || Date.now() - ms <= windowMs;
   });
-  // itemsは新着順ソート済み。stable sortなので同カテゴリ内の新着順は保たれる。
   targets.sort((a, b) =>
     newsPriorityScore(b) - newsPriorityScore(a) ||
     (CATEGORY_PRIORITY[a.category] !== undefined ? CATEGORY_PRIORITY[a.category] : 9) -
@@ -1140,39 +1195,70 @@ async function applyTranslations(items, deadlineAt = Date.now() + 8000) {
 
   const pending = [];
   const seen = new Set();
+  const now = Date.now();
   for (const item of targets) {
     const key = normalizeSignature(item.title);
     const entry = cache[key];
-    if (typeof entry === "string") continue;            // 翻訳済み
-    if (entry && entry.fail >= 4) continue;             // 4回失敗したら諦める(枠の無駄遣い防止)
+    if (typeof entry === "string") continue;
+    // 一時エラーは再試行する。旧形式の fail>=4 も永久停止させず、次回から復旧対象に戻す。
+    if (entry?.nextRetryAt && Date.parse(entry.nextRetryAt) > now) continue;
     if (seen.has(key)) continue;
     seen.add(key);
     pending.push({ key, title: item.title });
     if (pending.length >= MAX_TRANSLATE_PER_RUN) break;
   }
 
-  if (pending.length) {
+  if (pending.length && Date.now() < deadlineAt) {
     let changed = 0;
-    await runLimited(pending, TRANSLATE_CONCURRENCY, async (entry) => {
-      if (Date.now() >= deadlineAt) return; // 時間切れ: 残りは次回実行に持ち越し
-      const ja = await translateToJapanese(entry.title);
-      if (ja && ja !== entry.title) {
+    let openAiSuccess = 0;
+    let googleSuccess = 0;
+    const failures = {};
+
+    // 既存のOpenAIキーがあれば複数タイトルを1リクエストで翻訳し、
+    // 非公式Google翻訳への連打とレート制限を避ける。
+    const batch = await translateBatchWithOpenAI(pending.slice(0, TRANSLATE_BATCH_SIZE), deadlineAt);
+    for (const [key, translated] of batch) {
+      cache[key] = translated;
+      changed += 1;
+      openAiSuccess += 1;
+    }
+
+    const unresolved = pending.filter((entry) => !batch.has(entry.key));
+    await runLimited(unresolved, TRANSLATE_CONCURRENCY, async (entry) => {
+      if (Date.now() >= deadlineAt) return;
+      try {
+        const ja = await translateToJapanese(entry.title);
         cache[entry.key] = ja;
         changed += 1;
-      } else {
-        // 失敗を記録。次回以降は他のタイトルに枠を回し、4回で打ち切り。
+        googleSuccess += 1;
+      } catch (error) {
         const prev = cache[entry.key];
-        cache[entry.key] = { fail: ((prev && prev.fail) || 0) + 1 };
+        const fail = Math.min(10, ((prev && Number(prev.fail)) || 0) + 1);
+        const retryDelay = Math.min(6 * 60 * 60 * 1000, TRANSLATE_RETRY_BASE_MS * (2 ** Math.min(fail - 1, 5)));
+        cache[entry.key] = {
+          fail,
+          nextRetryAt: new Date(Date.now() + retryDelay).toISOString(),
+          lastError: String(error.message || "translate_failed").slice(0, 80)
+        };
+        failures[error.message] = (failures[error.message] || 0) + 1;
         changed += 1;
       }
     });
+
+    console.log("translation result:", {
+      pending: pending.length,
+      openAiSuccess,
+      googleSuccess,
+      failures
+    });
+
     if (changed) {
       try {
         const store = await openStore();
         const keys = Object.keys(cache);
         if (keys.length > 1200) {
           const trimmed = {};
-          keys.slice(-900).forEach((k) => { trimmed[k] = cache[k]; });
+          keys.slice(-900).forEach((key) => { trimmed[key] = cache[key]; });
           cache = trimmed;
         }
         await store.set(TRANSLATE_KEY, JSON.stringify(cache));
@@ -1240,15 +1326,15 @@ function shouldTranslateTitle(title) {
 }
 
 async function translateToJapanese(text) {
-  try {
-    const endpoint = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=ja&dt=t&q=" + encodeURIComponent(text);
-    const response = await fetchWithTimeout(endpoint, {}, 4000);
-    if (!response.ok) return "";
-    const data = await response.json();
-    return (data && data[0] ? data[0].map((row) => row && row[0] ? row[0] : "").join("") : "").trim();
-  } catch (error) {
-    return "";
+  const endpoint = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=ja&dt=t&q=" + encodeURIComponent(text);
+  const response = await fetchWithTimeout(endpoint, {}, 2500);
+  if (!response.ok) throw new Error(`google_translate_${response.status}`);
+  const data = await response.json();
+  const translated = (data && data[0] ? data[0].map((row) => row && row[0] ? row[0] : "").join("") : "").trim();
+  if (!translated || translated === text || !/[ぁ-んァ-ヶ一-龠]/.test(translated)) {
+    throw new Error("google_translate_empty");
   }
+  return translated;
 }
 
 async function runLimited(list, limit, worker) {
