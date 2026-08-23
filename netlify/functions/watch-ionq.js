@@ -63,7 +63,7 @@ const STATE_KEY = "watch-state";
 const POSTED_KEY = "posted-state";
 const CACHE_KEY = "latest-cache";
 const TRANSLATE_KEY = "translate-cache";
-const AI_PRIORITY_KEY = "priority-ai-cache-v2";
+const AI_PRIORITY_KEY = "priority-ai-cache-v3";
 const GOOGLE_NEWS_LIMIT = 25;
 const MAX_TRANSLATE_PER_RUN = 30;
 const TRANSLATE_CONCURRENCY = 6;
@@ -984,23 +984,27 @@ function isQuantumRelevant(item) {
 }
 
 const TECHNICAL_SCOPE_RE = /quantum|qubit|qpu|ion trap|trapped ion|superconducting|photonic|neutral atom|annealing|quantinuum|rigetti|d-wave|pasqal|quera|xanadu/i;
-const TECHNICAL_MILESTONE_RE = /breakthrough|milestone|first-ever|record|demonstrat(?:e|es|ed|ion)|achiev(?:e|es|ed)|quantum advantage|quantum supremacy|fault[ -]tolerant|logical qubit|below threshold/i;
-const TECHNICAL_SCALING_RE = /error correction|qec|logical qubit|code distance|magic state|fidelity|two[ -]qubit gate|gate error|scal(?:e|es|ed|ing|able)|modular|interconnect|distributed quantum|quantum network|photonic link|cryogenic control|all-to-all connectivity/i;
-const TECHNICAL_EVIDENCE_RE = /experiment|experimental|peer[ -]review|published|paper|preprint|arxiv|nature|science|university|researchers?|benchmark|measured|fidelity|error rate|\d+(?:\.\d+)?%/i;
+const TECHNICAL_MILESTONE_RE = /breakthrough|milestone|first-ever|record|quantum advantage|quantum supremacy|fault[ -]tolerant|logical qubit|below threshold/i;
+const TECHNICAL_PROGRESS_RE = /demonstrat(?:e|es|ed|ion)|achiev(?:e|es|ed)|build|built|develop(?:s|ed|ment)?|improv(?:e|es|ed|ement)|reduc(?:e|es|ed|tion)|cut|cuts|extend(?:s|ed)?|cool(?:s|ed|ing)?|integrat(?:e|es|ed|ion)|concentrat(?:e|es|ed|ion)|suppress(?:es|ed|ion)?|protect(?:s|ed|ion)?|fabricat(?:e|es|ed|ion)|manufactur(?:e|es|ed|ing)|industrializ(?:e|es|ed|ation)|inaugurat(?:e|es|ed|ion)|opens?|launch(?:es|ed)?|validat(?:e|es|ed|ion)|observ(?:e|es|ed|ation)|measur(?:e|es|ed|ement)|expand(?:s|ed|ing)/i;
+const TECHNICAL_CORE_RE = /error correction|\bqec\b|logical qubit|code distance|magic state|fidelity|accuracy|two[ -]qubit gate|gate error|coherence|decoherence|ion trap|trapped ion|ion crystal|waveguide|scal(?:e|es|ed|ing|able)|modular|interconnect|distributed quantum|quantum network|photonic link|cryogenic|dilution refrigerator|all-to-all connectivity|quantum foundry|chip foundry|resource demand|measurements?|sampling/i;
+const TECHNICAL_EVIDENCE_RE = /experiment|experimental|peer[ -]review|published|paper|preprint|arxiv|nature|science|university|researchers?|scientists?|study|team|benchmark|measured|error rate|\d+(?:\.\d+)?%/i;
 const TECHNICAL_BREADTH_RE = /hardware|architecture|processor|system|platform|compiler|algorithm|network|sensing|cryptography|materials?|drug discovery|industrial/i;
-const TECHNICAL_HYPE_RE = /could|might|may |potential(?:ly)?|opinion|prediction|roadmap|plans? to|aims? to|expects? to/i;
+const TECHNICAL_HYPE_RE = /could|might|may |potential(?:ly)?|opinion|prediction|roadmap|plans? to|aims? to|expects? to|proposes?|target(?:s|ing)?/i;
 
 function technicalImportanceScore(item) {
   const text = `${item && item.title || ""} ${item && item.source || ""} ${item && item.description || ""}`.toLowerCase();
   const category = String(item && item.category || "").toLowerCase();
   if ((category !== "quantum" && category !== "competitor") || !TECHNICAL_SCOPE_RE.test(text)) return 0;
-  let score = 0;
-  if (TECHNICAL_MILESTONE_RE.test(text)) score += 30;
-  if (TECHNICAL_SCALING_RE.test(text)) score += 25;
-  if (TECHNICAL_EVIDENCE_RE.test(text)) score += 20;
-  if (TECHNICAL_BREADTH_RE.test(text)) score += 15;
+  let score = 5;
+  const milestone = TECHNICAL_MILESTONE_RE.test(text);
+  const progress = TECHNICAL_PROGRESS_RE.test(text);
+  if (milestone) score += 25;
+  if (progress) score += 20;
+  if (TECHNICAL_CORE_RE.test(text)) score += 25;
+  if (TECHNICAL_EVIDENCE_RE.test(text)) score += 15;
+  if (TECHNICAL_BREADTH_RE.test(text)) score += 10;
   if (PRIMARY_SOURCE_RE.test(`${item.source || ""} ${item.url || ""}`) || /nature|science|university|arxiv/i.test(text)) score += 10;
-  if (TECHNICAL_HYPE_RE.test(text) && !TECHNICAL_EVIDENCE_RE.test(text)) score = Math.min(score, 59);
+  if (TECHNICAL_HYPE_RE.test(text) && !milestone && !progress) score = Math.min(score, 59);
   return Math.max(0, Math.min(100, score));
 }
 
@@ -1361,7 +1365,8 @@ function mergeAiPriorityScore(baseScore, aiScore) {
 }
 
 function newsPriorityScore(item, nowValue = Date.now()) {
-  return mergeAiPriorityScore(heuristicPriorityScore(item), item.aiPriorityScore);
+  const mergedScore = mergeAiPriorityScore(heuristicPriorityScore(item), item.aiPriorityScore);
+  return Math.max(mergedScore, technicalImportanceScore(item));
 }
 
 function isNotificationWorthy(item, nowValue) {
