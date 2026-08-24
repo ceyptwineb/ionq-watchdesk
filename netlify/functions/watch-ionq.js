@@ -66,9 +66,10 @@ const TRANSLATE_KEY = "translate-cache";
 const AI_PRIORITY_KEY = "priority-ai-cache-v3";
 const GOOGLE_NEWS_LIMIT = 25;
 const MAX_TRANSLATE_PER_RUN = 30;
-const TRANSLATE_CONCURRENCY = 2;
+const TRANSLATE_CONCURRENCY = 3;
 const TRANSLATE_BATCH_SIZE = 20;
 const TRANSLATE_RETRY_BASE_MS = 15 * 60 * 1000;
+const TRANSLATE_FAILURE_VERSION = 2;
 const MAX_NOTIFY_EMBEDS = 5;
 // 1時間Cronの遅延や一時的な取得失敗には余裕を持たせつつ、
 // 前日以前の記事を新着通知しない。
@@ -1205,7 +1206,7 @@ async function applyTranslations(items, deadlineAt = Date.now() + 8000) {
     const entry = cache[key];
     if (typeof entry === "string") continue;
     // 一時エラーは再試行する。旧形式の fail>=4 も永久停止させず、次回から復旧対象に戻す。
-    if (entry?.nextRetryAt && Date.parse(entry.nextRetryAt) > now) continue;
+    if (entry?.failureVersion === TRANSLATE_FAILURE_VERSION && entry?.nextRetryAt && Date.parse(entry.nextRetryAt) > now) continue;
     if (seen.has(key)) continue;
     seen.add(key);
     pending.push({ key, title: item.title });
@@ -1228,30 +1229,57 @@ async function applyTranslations(items, deadlineAt = Date.now() + 8000) {
     }
 
     const unresolved = pending.filter((entry) => !batch.has(entry.key));
+    let myMemorySuccess = 0;
     await runLimited(unresolved, TRANSLATE_CONCURRENCY, async (entry) => {
       if (Date.now() >= deadlineAt) return;
+      const providerErrors = [];
+      let ja = "";
+
+      // MyMemoryは公開仕様のREST API。Google非公式APIの制限時にも動く経路として先に試す。
       try {
-        const ja = await translateToJapanese(entry.title);
+        const remaining = deadlineAt - Date.now();
+        if (remaining >= 500) ja = await translateWithMyMemory(entry.title, Math.min(1800, remaining));
+      } catch (error) {
+        providerErrors.push(error.message);
+      }
+
+      if (!ja && Date.now() < deadlineAt) {
+        try {
+          const remaining = deadlineAt - Date.now();
+          if (remaining >= 400) ja = await translateToJapanese(entry.title, Math.min(1200, remaining));
+        } catch (error) {
+          providerErrors.push(error.message);
+        }
+      }
+
+      if (ja) {
         cache[entry.key] = ja;
         changed += 1;
-        googleSuccess += 1;
-      } catch (error) {
-        const prev = cache[entry.key];
-        const fail = Math.min(10, ((prev && Number(prev.fail)) || 0) + 1);
-        const retryDelay = Math.min(6 * 60 * 60 * 1000, TRANSLATE_RETRY_BASE_MS * (2 ** Math.min(fail - 1, 5)));
-        cache[entry.key] = {
-          fail,
-          nextRetryAt: new Date(Date.now() + retryDelay).toISOString(),
-          lastError: String(error.message || "translate_failed").slice(0, 80)
-        };
-        failures[error.message] = (failures[error.message] || 0) + 1;
-        changed += 1;
+        if (providerErrors.length) googleSuccess += 1;
+        else myMemorySuccess += 1;
+        return;
       }
+
+      // 一時障害は15分後に必ず再試行。旧失敗形式や長い指数バックオフは無効化する。
+      const prev = cache[entry.key];
+      const fail = prev?.failureVersion === TRANSLATE_FAILURE_VERSION
+        ? Math.min(10, (Number(prev.fail) || 0) + 1)
+        : 1;
+      const lastError = providerErrors.join("|") || "translate_deadline";
+      cache[entry.key] = {
+        fail,
+        failureVersion: TRANSLATE_FAILURE_VERSION,
+        nextRetryAt: new Date(Date.now() + TRANSLATE_RETRY_BASE_MS).toISOString(),
+        lastError: lastError.slice(0, 120)
+      };
+      failures[lastError] = (failures[lastError] || 0) + 1;
+      changed += 1;
     });
 
     console.log("translation result:", {
       pending: pending.length,
       openAiSuccess,
+      myMemorySuccess,
       googleSuccess,
       failures
     });
@@ -1329,14 +1357,30 @@ function shouldTranslateTitle(title) {
   return true;
 }
 
-async function translateToJapanese(text) {
+async function translateToJapanese(text, timeoutMs = 1200) {
   const endpoint = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=ja&dt=t&q=" + encodeURIComponent(text);
-  const response = await fetchWithTimeout(endpoint, {}, 2500);
+  const response = await fetchWithTimeout(endpoint, {}, timeoutMs);
   if (!response.ok) throw new Error(`google_translate_${response.status}`);
   const data = await response.json();
   const translated = (data && data[0] ? data[0].map((row) => row && row[0] ? row[0] : "").join("") : "").trim();
   if (!translated || translated === text || !/[ぁ-んァ-ヶ一-龠]/.test(translated)) {
     throw new Error("google_translate_empty");
+  }
+  return translated;
+}
+
+async function translateWithMyMemory(text, timeoutMs = 1800) {
+  // 公開REST API仕様: qは500 bytesまで、langpairはISO言語コード。
+  const clipped = String(text || "").slice(0, 450);
+  const endpoint = "https://api.mymemory.translated.net/get?q=" + encodeURIComponent(clipped) + "&langpair=en%7Cja&mt=1";
+  const response = await fetchWithTimeout(endpoint, {
+    headers: { "user-agent": "IONQ-Watchdesk/1.0" }
+  }, timeoutMs);
+  if (!response.ok) throw new Error(`mymemory_translate_${response.status}`);
+  const data = await response.json();
+  const translated = String(data?.responseData?.translatedText || "").trim();
+  if (!translated || translated === text || !/[ぁ-んァ-ヶ一-龠]/.test(translated)) {
+    throw new Error("mymemory_translate_empty");
   }
   return translated;
 }
