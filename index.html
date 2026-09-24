@@ -403,6 +403,52 @@
       }
       .utility-row .weekly-action { grid-column: 1 / -1; }
     }
+    .discovery-row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+    .discovery-row label { display:flex; align-items:center; gap:5px; font-size:12px; color:var(--muted); }
+    .discovery-row select { max-width:100%; min-height:38px; padding:5px; border:1px solid var(--line); border-radius:6px; background:white; color:var(--text); }
+    #visibleCount { font-size:12px; color:var(--muted); }
+    .detail-close { display:none; }
+    .item-title { cursor:pointer; }
+    @media (max-width:640px) {
+      .app, .main { display:block; }
+      .side { padding:8px 10px; gap:6px; }
+      .brand { width:auto; }
+      .brand h1 { font-size:18px; margin:0; }
+      .brand p { display:none; }
+      .status-box { order:0; width:auto; margin-left:auto; font-size:10px; gap:4px; }
+      #summary, #sources { display:none; }
+      .side-actions { display:flex; flex-wrap:nowrap; overflow-x:auto; }
+      .side-actions button { flex:0 0 auto; font-size:12px; padding:6px 8px; min-height:38px; }
+      .toolbar { padding:8px; gap:6px; position:static; }
+      .filter-row { gap:6px; }
+      .filter-group { flex-wrap:nowrap; overflow-x:auto; width:100%; }
+      .filter-label { flex-shrink:0; }
+      .discovery-row { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+      .discovery-row label { min-width:0; }
+      .discovery-row select { min-width:0; width:100%; font-size:16px; }
+      .discovery-row #onlyUnposted { min-height:40px; }
+      .utility-row { display:flex; flex-wrap:nowrap; overflow-x:auto; }
+      .utility-row button { width:auto; flex:0 0 auto; font-size:12px; }
+      .feed { max-height:none; overflow:visible; padding:8px; }
+      .item { padding:10px; gap:6px; }
+      .item-title { font-size:14px; }
+      .item > .item-title-original { display:none; }
+      .item .meta { font-size:11px; gap:4px; }
+      .posted { min-height:40px; }
+      .item-actions .row { width:auto; flex:1; justify-content:flex-end; }
+      .item-actions [data-act="open-gpts"] { max-width:220px; }
+      .item-actions [data-act="select"] { min-height:44px; }
+      .detail { display:none; }
+      .detail.mobile-open { display:block; position:fixed; inset:0; height:100dvh; overflow:auto; z-index:40; background:var(--bg); padding-bottom:env(safe-area-inset-bottom,16px); }
+      body.detail-open { overflow:hidden; }
+      .detail-close { display:block; position:sticky; top:0; width:100%; min-height:48px; z-index:1; border-radius:0; background:var(--panel); color:var(--accent); text-align:left; padding-left:16px; font-weight:700; }
+      .detail-head { padding:12px; }
+      .detail-head h2 { font-size:16px; }
+      .detail-body { overflow:visible; padding:10px; }
+      .detail-body .row { display:grid; grid-template-columns:1fr 1fr; }
+      .detail-body .row button { min-height:44px; }
+      .detail .url-box { max-height:64px; overflow:auto; }
+    }
   </style>
 </head>
 <body>
@@ -448,6 +494,12 @@
             <button id="tier2" type="button">📚保管</button>
           </div>
         </div>
+        <div class="discovery-row" aria-label="記事の絞り込みと並び順">
+          <button id="onlyUnposted" type="button" aria-pressed="false">未投稿のみ</button>
+          <label>分野 <select id="topicFilter"><option value="all">すべて</option><option value="ionq">IonQ・傘下企業</option><option value="technology">量子技術</option><option value="quantum">量子業界・競合</option><option value="macro">経済・市場</option></select></label>
+          <label>並び順 <select id="sortOrder"><option value="newest">新着順</option><option value="priority">重要度順</option></select></label>
+          <span id="visibleCount" role="status" aria-live="polite"></span>
+        </div>
         <div class="utility-row" aria-label="まとめと投稿済み操作">
           <button id="weeklyDigest" class="weekly-action" type="button">🚨速報の週間まとめ</button>
           <button id="markAllPosted" class="secondary-action" type="button">表示中を投稿済み</button>
@@ -457,7 +509,8 @@
       <div id="feed" class="feed"></div>
     </section>
 
-    <section class="detail">
+    <section class="detail" id="detailPanel" aria-label="記事詳細">
+      <button id="closeDetail" class="detail-close" type="button">← 一覧へ戻る</button>
       <div id="detailHead" class="detail-head">
         <h2>ニュースを選択</h2>
         <div class="muted">記事をコピーし、ChatGPTの量子レポートで投稿を作成します。</div>
@@ -495,7 +548,7 @@
     <form method="dialog"><button>一覧に戻る</button></form>
   </dialog>
   <script>
-    const APP_VERSION = "chatgpt-plugin-handoff-20260924";
+    const APP_VERSION = "mobile-editorial-workflow-20260924";
     const CHATGPT_URL = "https://chatgpt.com/";
     const PUBLIC_ORIGIN = "https://ionqnews.netlify.app";
     const DEFAULT_MAX_AGE_HOURS = 48;
@@ -505,6 +558,9 @@
     const postedEndpoint = API + "/.netlify/functions/posted";
 
     const state = {
+      onlyUnposted: false,
+      topic: "all",
+      sort: "newest",
       rawItems: [],
       items: [],
       posted: new Set(loadLocalPosted()),
@@ -572,6 +628,27 @@
 
     function bindEvents() {
       el.reload.addEventListener("click", refresh);
+      document.getElementById("onlyUnposted").addEventListener("click", function () {
+        state.onlyUnposted = !state.onlyUnposted;
+        if (state.onlyUnposted) state.view = "all";
+        updateViewButtons();
+        renderFeed();
+      });
+      document.getElementById("topicFilter").addEventListener("change", function (event) {
+        state.topic = event.target.value;
+        renderFeed();
+      });
+      document.getElementById("sortOrder").addEventListener("change", function (event) {
+        state.sort = event.target.value;
+        renderFeed();
+      });
+      document.getElementById("closeDetail").addEventListener("click", closeDetail);
+      document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") closeDetail();
+      });
+      window.addEventListener("resize", function () {
+        if (!window.matchMedia("(max-width: 640px)").matches) closeDetail();
+      });
       el.search.addEventListener("input", function () {
         state.query = el.search.value.trim().toLowerCase();
         renderFeed();
@@ -603,6 +680,7 @@
       });
       el.showPosted.addEventListener("click", function () {
         state.view = "posted";
+        state.onlyUnposted = false;
         updateViewButtons();
         renderFeed();
       });
@@ -627,7 +705,8 @@
       } catch (error) {
         el.updated.textContent = "更新失敗";
         el.summary.textContent = "ニュース取得失敗";
-        el.feed.innerHTML = errorBox("速報取得に失敗しました", error.message, latestEndpoint);
+        if (!state.items.length) el.feed.innerHTML = errorBox("速報取得に失敗しました", error.message, latestEndpoint);
+        else el.summary.textContent = "通信エラー：取得済みの記事を表示中。更新ボタンで再試行できます。";
       }
     }
 
@@ -800,6 +879,9 @@
     }
 
     function updateViewButtons() {
+      const unpostedButton = document.getElementById("onlyUnposted");
+      unpostedButton.className = state.onlyUnposted ? "primary" : "";
+      unpostedButton.setAttribute("aria-pressed", String(state.onlyUnposted));
       el.showAll.className = state.view === "all" ? "primary" : "";
       el.showPosted.className = state.view === "posted" ? "primary" : "";
       el.hideUnreadable.className = state.hideUnreadable ? "primary" : "";
@@ -807,7 +889,7 @@
       el.hideUnreadable.textContent = (state.hideUnreadable ? "読めない媒体を表示に戻す" : "GPTで読めない媒体を隠す") + " (" + unreadableCount + ")";
       const posted = countPosted();
       const unposted = state.items.length - posted;
-      el.showAll.textContent = "最新ニュースを見る (未投稿 " + unposted + ")";
+      el.showAll.textContent = "全記事 (未投稿 " + unposted + ")";
       el.showPosted.textContent = "投稿済みだけ見る (" + posted + ")";
     }
 
@@ -852,6 +934,7 @@
 
     function renderFeed() {
       const items = filteredItems();
+      document.getElementById("visibleCount").textContent = "表示 " + items.length + "件";
       const selectionVisible = items.some(function (item) { return item.id === state.selectedId; });
       if (!selectionVisible && items.length) {
         selectItem(items[0].id);
@@ -925,11 +1008,11 @@
         "</div>",
         "<div class=\"item-actions\">",
         "<label class=\"posted\"><input type=\"checkbox\" " + (done ? "checked" : "") + ">投稿済み</label>",
-        "<div class=\"row\"><button type=\"button\" data-act=\"open-gpts\" class=\"primary\">コピーしてChatGPTを開く</button><button type=\"button\" data-act=\"select\">\u9078\u629e</button></div>",
+        "<div class=\"row\"><button type=\"button\" data-act=\"open-gpts\" class=\"primary\">コピーしてChatGPTを開く</button><button type=\"button\" data-act=\"select\">詳細</button></div>",
         "</div>"
       ].join("");
 
-      card.querySelector("[data-act='select']").addEventListener("click", function () { selectItem(item.id); });
+      card.querySelector("[data-act='select']").addEventListener("click", function () { selectItem(item.id, true); });
       card.querySelector("[data-act='open-gpts']").addEventListener("click", function () {
         selectItem(item.id);
         copyAndOpenGpts();
@@ -937,21 +1020,47 @@
       card.querySelector("input").addEventListener("change", function (event) {
         setPosted(item, event.target.checked);
       });
-      card.addEventListener("dblclick", function () { selectItem(item.id); });
+      card.querySelector(".item-title").addEventListener("click", function () { selectItem(item.id, true); });
+      card.addEventListener("dblclick", function () { selectItem(item.id, true); });
       parent.appendChild(card);
+    }
+
+    function matchesTopic(item, topic) {
+      if (topic === "all") return true;
+      if (topic === "macro") return item.category === "macro";
+      const text = [item.title, item.description, item.companyName, item.ticker, item.source].join(" ");
+      if (topic === "ionq") return Boolean(item.ionqPortfolio) || /\bionq\b|ionq公式/i.test(text);
+      if (topic === "technology") return getSignalBadges(item).includes("技術材料") || technicalImportanceScore(item) >= 40;
+      return item.category === "quantum" || item.category === "competitor" || /quantum|qubit|量子/i.test(text);
     }
 
     function filteredItems() {
       return state.items.filter(function (item) {
         if (state.view === "posted" && !isPosted(item)) return false;
+        if (state.onlyUnposted && isPosted(item)) return false;
+        if (!matchesTopic(item, state.topic)) return false;
         if (state.hideUnreadable && itemUnreadable(item)) return false;
         if (state.tier !== "all" && postTier(item) !== state.tier) return false;
         if (!state.query) return true;
         return [item.title, item.titleJa, item.source, item.label, item.form, item.ticker].join(" ").toLowerCase().includes(state.query);
+      }).sort(state.sort === "priority" ? compareNewsPriority : function (a, b) {
+        return Date.parse(b.publishedAt || b.acceptedAt || 0) - Date.parse(a.publishedAt || a.acceptedAt || 0);
       });
     }
 
-    function selectItem(id) {
+    function openDetail() {
+      if (!window.matchMedia("(max-width: 640px)").matches) return;
+      document.getElementById("detailPanel").classList.add("mobile-open");
+      document.body.classList.add("detail-open");
+      document.getElementById("closeDetail").focus();
+    }
+
+    function closeDetail() {
+      document.getElementById("detailPanel").classList.remove("mobile-open");
+      document.body.classList.remove("detail-open");
+    }
+
+    function selectItem(id, showDetail) {
       const item = findItem(id);
       if (!item) return;
       state.selectedId = id;
@@ -973,6 +1082,7 @@
       el.copyStatus.textContent = "選択中";
       updateBlockSourceButton(item);
       renderFeed();
+      if (showDetail) openDetail();
     }
 
     function displayTitle(item) {
