@@ -521,7 +521,7 @@
           <textarea id="gptsText" readonly>左のニュースを選択してください。</textarea>
           <div class="row">
             <button id="copyGpts" class="primary">記事をコピー</button>
-            <button id="openGpts">コピーしてChatGPTを開く</button>
+            <button id="openGpts">URLをコピーしてChatGPTを開く</button>
             <button id="copyUrl">URLだけコピー</button>
             <button id="openUrl">元記事を開く</button>
             <button id="blockSource" class="ghost">この媒体は読めなかった</button>
@@ -548,7 +548,7 @@
     <form method="dialog"><button>一覧に戻る</button></form>
   </dialog>
   <script>
-    const APP_VERSION = "mobile-editorial-workflow-20260924";
+    const APP_VERSION = "url-only-handoff-20260924";
     const CHATGPT_URL = "https://chatgpt.com/";
     const PUBLIC_ORIGIN = "https://ionqnews.netlify.app";
     const DEFAULT_MAX_AGE_HOURS = 48;
@@ -1008,7 +1008,7 @@
         "</div>",
         "<div class=\"item-actions\">",
         "<label class=\"posted\"><input type=\"checkbox\" " + (done ? "checked" : "") + ">投稿済み</label>",
-        "<div class=\"row\"><button type=\"button\" data-act=\"open-gpts\" class=\"primary\">コピーしてChatGPTを開く</button><button type=\"button\" data-act=\"select\">詳細</button></div>",
+        "<div class=\"row\"><button type=\"button\" data-act=\"open-gpts\" class=\"primary\">URLをコピーしてChatGPTを開く</button><button type=\"button\" data-act=\"select\">詳細</button></div>",
         "</div>"
       ].join("");
 
@@ -1208,9 +1208,10 @@
     }
 
     async function copyAndOpenGpts() {
-      const text = el.gptsText.value;
-      if (!text || text === "左のニュースを選択してください。") return;
-      await copyAndOpenChatGPT(text);
+      const item = selectedItem();
+      if (!item) return;
+      const url = preferredReadableItem(item).url || "";
+      await copyAndOpenChatGPT(url);
     }
     async function copySelectedUrl() {
       const item = selectedItem();
