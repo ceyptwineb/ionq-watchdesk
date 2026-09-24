@@ -544,12 +544,24 @@
     <h2 id="copyFallbackTitle">コピーできませんでした</h2>
     <p>下の文章を長押ししてコピーしてください。ChatGPTで「@」から量子レポート（週間まとめは週間用）を選び、貼り付けて送信します。</p>
     <textarea id="manualCopyText" readonly aria-label="手動コピー用の記事" style="font-size:16px;min-height:200px;"></textarea>
-    <p><a href="https://chatgpt.com/">コピーできたらChatGPTを開く</a></p>
+    <p><a href="chatgpt://">コピーできたらiPhoneアプリを開く</a> ／ <a href="https://chatgpt.com/">Web版で開く</a></p>
+    <form method="dialog"><button>一覧に戻る</button></form>
+  </dialog>
+  <dialog id="appLaunch" aria-labelledby="appLaunchTitle" style="width:min(92vw,420px);border:1px solid var(--line);border-radius:12px;padding:18px;">
+    <h2 id="appLaunchTitle">コピーしました</h2>
+    <p>アプリが開かない場合は下のリンクを押してください。開いたらプラグインを選び、貼り付けて送信できます。</p>
+    <p><a href="chatgpt://" style="display:inline-block;padding:12px 0;">ChatGPTアプリを開く</a></p>
+    <p><a href="https://chatgpt.com/">Web版で開く</a></p>
     <form method="dialog"><button>一覧に戻る</button></form>
   </dialog>
   <script>
-    const APP_VERSION = "url-only-handoff-20260924";
+    const APP_VERSION = "ios-app-launch-20260925";
     const CHATGPT_URL = "https://chatgpt.com/";
+    const CHATGPT_APP_URL = "chatgpt://";
+    function isAppleMobile() {
+      return /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+        (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    }
     const PUBLIC_ORIGIN = "https://ionqnews.netlify.app";
     const DEFAULT_MAX_AGE_HOURS = 48;
     const isLocalPreview = location.protocol === "file:" || location.hostname === "127.0.0.1" || location.hostname === "localhost";
@@ -1195,7 +1207,7 @@
     async function copyAndOpenChatGPT(text) {
       if (!text) return;
       // Safariでコピー権限を失わないよう、移動前にコピーを完了する。
-      // 同じタブで移動するため、非同期処理後のポップアップ遮断も避けられる。
+      // iPhoneでは実機確認済みのスキームを使用。Safariに止められた場合は直接リンクで再試行する。
       try {
         await copyText(text);
       } catch (error) {
@@ -1204,7 +1216,17 @@
         return;
       }
       el.copyStatus.textContent = "コピーしました。ChatGPTで@からプラグインを選択し、貼り付けて送信してください。";
-      window.location.assign(CHATGPT_URL);
+      if (isAppleMobile()) {
+        const dialog = document.getElementById("appLaunch");
+        if (!dialog.open) dialog.showModal();
+        try {
+          window.location.assign(CHATGPT_APP_URL);
+        } catch (error) {
+          // コピー済みの内容は保持し、ダイアログの直接リンクを使える状態にする。
+        }
+      } else {
+        window.location.assign(CHATGPT_URL);
+      }
     }
 
     async function copyAndOpenGpts() {
