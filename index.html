@@ -388,7 +388,11 @@
       .side-actions button { flex: 1 1 auto; }
       .filter-row { align-items: flex-start; }
       .filter-group { flex-wrap: wrap; }
-      .item-actions { align-items: flex-end; }
+      .item-actions { align-items: center; flex-wrap: wrap; }
+      .item-actions .row { width: 100%; display: flex; }
+      .item-actions [data-act="open-gpts"] { flex: 1; min-height: 44px; font-size: 13px; }
+      .detail-body #openGpts { min-height: 44px; }
+      .search, textarea { font-size: 16px; }
       .utility-row {
         display: grid;
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -456,25 +460,26 @@
     <section class="detail">
       <div id="detailHead" class="detail-head">
         <h2>ニュースを選択</h2>
-        <div class="muted">記事URLをGPTsへ渡して、深掘りレポートを作る運用に戻します。</div>
+        <div class="muted">記事をコピーし、ChatGPTの量子レポートで投稿を作成します。</div>
       </div>
       <div class="detail-body">
         <div class="card">
-          <h3>GPTs用コピー</h3>
+          <h3>プラグイン用の記事</h3>
           <textarea id="gptsText" readonly>左のニュースを選択してください。</textarea>
           <div class="row">
-            <button id="copyGpts" class="primary">GPTs用テキストをコピー</button>
-            <button id="openGpts">GPTsを開く</button>
+            <button id="copyGpts" class="primary">記事をコピー</button>
+            <button id="openGpts">コピーしてChatGPTを開く</button>
             <button id="copyUrl">URLだけコピー</button>
             <button id="openUrl">元記事を開く</button>
             <button id="blockSource" class="ghost">この媒体は読めなかった</button>
           </div>
-          <div id="copyStatus" class="muted">待機中</div>
+          <div class="muted">ChatGPTで「@」→「量子レポート」を選択→貼り付け→送信。プラグインの選択と送信は手動です。週間まとめは週間用プラグインを選んでください。</div>
+          <div id="copyStatus" class="muted" role="status" aria-live="polite">待機中</div>
         </div>
 
         <div class="card">
           <h3>運用メモ</h3>
-          <div class="muted">このサイトは集計が主役。レポート作成はGPTsに任せます。</div>
+          <div class="muted">このサイトは集計が主役。ChatGPTで@から量子レポートを選び、記事を貼り付けて送信してください。</div>
           <div class="muted">古い記事は自動で落とし、48時間以内の情報だけを表示します。</div>
           <div class="muted">投稿済みチェックは「元ネタに対して投稿したか」を管理するために使います。</div>
         </div>
@@ -482,11 +487,17 @@
     </section>
   </main>
 
+  <dialog id="copyFallback" aria-labelledby="copyFallbackTitle" style="width:min(92vw,600px);max-height:85dvh;overflow:auto;border:1px solid var(--line);border-radius:12px;padding:18px;">
+    <h2 id="copyFallbackTitle">コピーできませんでした</h2>
+    <p>下の文章を長押ししてコピーしてください。ChatGPTで「@」から量子レポート（週間まとめは週間用）を選び、貼り付けて送信します。</p>
+    <textarea id="manualCopyText" readonly aria-label="手動コピー用の記事" style="font-size:16px;min-height:200px;"></textarea>
+    <p><a href="https://chatgpt.com/">コピーできたらChatGPTを開く</a></p>
+    <form method="dialog"><button>一覧に戻る</button></form>
+  </dialog>
   <script>
-    const APP_VERSION = "technical-ranking-fix-20260824";
+    const APP_VERSION = "chatgpt-plugin-handoff-20260924";
+    const CHATGPT_URL = "https://chatgpt.com/";
     const PUBLIC_ORIGIN = "https://ionqnews.netlify.app";
-    const GPTS_URL = "https://chatgpt.com/g/g-6a41a5264e6081918db223a3b8a4d808-liang-zi-rehoto";
-    const WEEKLY_GPTS_URL = "https://chatgpt.com/g/g-6a629ec2cb7c81919c4f72700a4839c6-liang-zi-zhou-jian-rehoto";
     const DEFAULT_MAX_AGE_HOURS = 48;
     const isLocalPreview = location.protocol === "file:" || location.hostname === "127.0.0.1" || location.hostname === "localhost";
     const API = isLocalPreview ? PUBLIC_ORIGIN : "";
@@ -914,7 +925,7 @@
         "</div>",
         "<div class=\"item-actions\">",
         "<label class=\"posted\"><input type=\"checkbox\" " + (done ? "checked" : "") + ">投稿済み</label>",
-        "<div class=\"row\"><button type=\"button\" data-act=\"open-gpts\" class=\"primary\">GPTs\u3092\u958b\u304f</button><button type=\"button\" data-act=\"select\">\u9078\u629e</button></div>",
+        "<div class=\"row\"><button type=\"button\" data-act=\"open-gpts\" class=\"primary\">コピーしてChatGPTを開く</button><button type=\"button\" data-act=\"select\">\u9078\u629e</button></div>",
         "</div>"
       ].join("");
 
@@ -1035,18 +1046,9 @@
       el.gptsText.value = text;
       el.detailHead.innerHTML = [
         "<h2>🚨速報の週間まとめ</h2>",
-        "<div class=\"muted\">直近7日・重複整理後 " + items.length + " 件をGPTsへ渡します。投稿済みの記事も振り返り対象に含みます。</div>"
+        "<div class=\"muted\">直近7日・重複整理後 " + items.length + " 件をChatGPTへ渡します。投稿済みの記事も振り返り対象に含みます。</div>"
       ].join("");
-      const opened = window.open(WEEKLY_GPTS_URL, "_blank");
-      if (opened) opened.opener = null;
-      try {
-        await copyText(text);
-        el.copyStatus.innerHTML = opened
-          ? "<span class=\"ok\">週間まとめ用テキストをコピーしてGPTsを開きました</span>"
-          : "<span class=\"warn\">コピーしました。ポップアップが遮断されたため、GPTsを手動で開いてください</span>";
-      } catch (error) {
-        el.copyStatus.innerHTML = "<span class=\"warn\">GPTsは開きましたが、コピーに失敗しました</span>";
-      }
+      await copyAndOpenChatGPT(text);
     }
 
     function preferredReadableItem(item) {
@@ -1058,28 +1060,47 @@
       }) || item;
     }
 
+    function showManualCopy(text) {
+      const dialog = document.getElementById("copyFallback");
+      const field = document.getElementById("manualCopyText");
+      field.value = text;
+      if (!dialog.open) dialog.showModal();
+      field.focus();
+      field.select();
+      field.setSelectionRange(0, text.length);
+    }
+
     async function copyGptsText() {
-      const item = selectedItem();
-      if (!item) return;
-      await copyText(buildGptsText(item));
-      el.copyStatus.innerHTML = "<span class=\"ok\">GPTs用テキストをコピーしました</span>";
+      const text = el.gptsText.value;
+      if (!text || text === "左のニュースを選択してください。") return;
+      try {
+        await copyText(text);
+        el.copyStatus.textContent = "コピーしました。ChatGPTで@からプラグインを選択し、貼り付けて送信してください。";
+      } catch (error) {
+        el.copyStatus.textContent = "コピーに失敗しました。表示された文章を手動でコピーしてください。";
+        showManualCopy(text);
+      }
+    }
+
+    async function copyAndOpenChatGPT(text) {
+      if (!text) return;
+      // Safariでコピー権限を失わないよう、移動前にコピーを完了する。
+      // 同じタブで移動するため、非同期処理後のポップアップ遮断も避けられる。
+      try {
+        await copyText(text);
+      } catch (error) {
+        el.copyStatus.textContent = "コピーに失敗しました。手動でコピーしてからChatGPTを開いてください。";
+        showManualCopy(text);
+        return;
+      }
+      el.copyStatus.textContent = "コピーしました。ChatGPTで@からプラグインを選択し、貼り付けて送信してください。";
+      window.location.assign(CHATGPT_URL);
     }
 
     async function copyAndOpenGpts() {
-      const item = selectedItem();
-      if (!item) return;
-      // await後にwindow.openするとポップアップブロックされるブラウザがあるため、
-      // ユーザー操作の同期処理中に先に開く。
-      const opened = window.open(GPTS_URL, "_blank");
-      if (opened) opened.opener = null;
-      try {
-        await copyText(buildGptsText(item));
-        el.copyStatus.innerHTML = opened
-          ? "<span class=\"ok\">GPTs用テキストをコピーしてChatGPTを開きました</span>"
-          : "<span class=\"warn\">コピーしました。ポップアップが遮断されたため、GPTsを手動で開いてください</span>";
-      } catch (error) {
-        el.copyStatus.innerHTML = "<span class=\"warn\">GPTsは開きましたが、コピーに失敗しました</span>";
-      }
+      const text = el.gptsText.value;
+      if (!text || text === "左のニュースを選択してください。") return;
+      await copyAndOpenChatGPT(text);
     }
     async function copySelectedUrl() {
       const item = selectedItem();
@@ -1306,15 +1327,26 @@
 
     async function copyText(text) {
       if (navigator.clipboard && navigator.clipboard.writeText) {
-        await navigator.clipboard.writeText(text);
-        return;
+        try {
+          await navigator.clipboard.writeText(text);
+          return;
+        } catch (error) {
+          // ブラウザによる拒否時は従来方式を試し、失敗は呼び出し元へ返す。
+        }
       }
       const area = document.createElement("textarea");
       area.value = text;
+      area.readOnly = true;
+      area.style.cssText = "position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;font-size:16px;";
       document.body.appendChild(area);
-      area.select();
-      document.execCommand("copy");
-      area.remove();
+      try {
+        area.focus();
+        area.select();
+        area.setSelectionRange(0, text.length);
+        if (!document.execCommand("copy")) throw new Error("Clipboard copy failed");
+      } finally {
+        area.remove();
+      }
     }
 
     function loadLocalPosted() {
