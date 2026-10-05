@@ -388,8 +388,12 @@ test("スマホでも投稿済み操作を表示し、速報の週間まとめ�
   assert.doesNotMatch(html, /\.toolbar-row \.secondary-action\s*\{\s*display:\s*none/);
   assert.match(html, /function weeklyPriorityItems[\s\S]*isWithinHours\(item, 168\)[\s\S]*postTier\(item\) === 0/);
   assert.match(html, /function buildWeeklyDigestText/);
-  assert.match(html, /const WEEKLY_GPTS_URL = "https:\/\/chatgpt\.com\/g\/g-6a629ec2cb7c81919c4f72700a4839c6-liang-zi-zhou-jian-rehoto"/);
-  assert.match(html, /window\.open\(WEEKLY_GPTS_URL, "_blank"\)/);
+  assert.match(html, /const CLAUDE_WEEKLY_URL = "https:\/\/claude\.ai\/new";/);
+  assert.match(html, /const CLAUDE_REPORT_URL = "https:\/\/claude\.ai\/new";/);
+  assert.match(html, /const CLAUDE_APP_URL = "claude:\/\/";/);
+  assert.match(html, /function createWeeklyDigest[\s\S]*copyAndOpenClaude\(text, CLAUDE_WEEKLY_URL\)/);
+  assert.match(html, /function copyAndOpenGpts[\s\S]*copyAndOpenClaude\(url, CLAUDE_REPORT_URL\)/);
+  assert.doesNotMatch(html, /chatgpt\.com|chatgpt:\/\/|CHATGPT_/);
   assert.match(html, /スレッドには分割しないでください/);
   assert.match(html, /投稿済みの記事も振り返り対象に含みます/);
 });
