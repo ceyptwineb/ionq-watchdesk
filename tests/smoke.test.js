@@ -388,8 +388,10 @@ test("スマホでも投稿済み操作を表示し、速報の週間まとめ�
   assert.doesNotMatch(html, /\.toolbar-row \.secondary-action\s*\{\s*display:\s*none/);
   assert.match(html, /function weeklyPriorityItems[\s\S]*isWithinHours\(item, 168\)[\s\S]*postTier\(item\) === 0/);
   assert.match(html, /function buildWeeklyDigestText/);
-  assert.match(html, /const CLAUDE_WEEKLY_URL = "https:\/\/claude\.ai\/new";/);
-  assert.match(html, /const CLAUDE_REPORT_URL = "https:\/\/claude\.ai\/new";/);
+  assert.match(html, /const CLAUDE_NEW_CHAT_URL = "https:\/\/claude\.ai\/new";/);
+  assert.match(html, /const CLAUDE_WEEKLY_URL = CLAUDE_NEW_CHAT_URL;/);
+  assert.match(html, /const CLAUDE_REPORT_URL = "https:\/\/claude\.ai\/code\/project\/chan_[A-Za-z0-9]+";/);
+  assert.match(html, /window\.location\.assign\(webUrl === CLAUDE_NEW_CHAT_URL \? CLAUDE_APP_URL : webUrl\)/);
   assert.match(html, /const CLAUDE_APP_URL = "claude:\/\/";/);
   assert.match(html, /function createWeeklyDigest[\s\S]*copyAndOpenClaude\(text, CLAUDE_WEEKLY_URL\)/);
   assert.match(html, /function copyAndOpenGpts[\s\S]*copyAndOpenClaude\(buildGptsText\(item\), CLAUDE_REPORT_URL\)/);

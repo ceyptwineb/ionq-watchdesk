@@ -557,8 +557,9 @@
   <script>
     const APP_VERSION = "ios-app-launch-20260925";
     // 量子レポート用・週間まとめ用のClaudeプロジェクトURL(当面は新規チャット)。
-    const CLAUDE_REPORT_URL = "https://claude.ai/new";
-    const CLAUDE_WEEKLY_URL = "https://claude.ai/new";
+    const CLAUDE_NEW_CHAT_URL = "https://claude.ai/new";
+    const CLAUDE_REPORT_URL = "https://claude.ai/code/project/chan_01Q4i5hfdJDGa9xkqwFHVPBR";
+    const CLAUDE_WEEKLY_URL = CLAUDE_NEW_CHAT_URL;
     const CLAUDE_APP_URL = "claude://";
     function isAppleMobile() {
       return /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
@@ -1216,7 +1217,7 @@
     async function copyAndOpenClaude(text, webUrl) {
       if (!text) return;
       // Safariでコピー権限を失わないよう、移動前にコピーを完了する。
-      // iPhoneではアプリのスキームを使用。Safariに止められた場合は直接リンクで再試行する。
+      // iPhoneではプロジェクトURLはhttpsのまま開き、新規チャットはアプリのスキームを使う。Safariに止められた場合は直接リンクで再試行する。
       try {
         await copyText(text);
       } catch (error) {
@@ -1230,7 +1231,7 @@
         const dialog = document.getElementById("appLaunch");
         if (!dialog.open) dialog.showModal();
         try {
-          window.location.assign(CLAUDE_APP_URL);
+          window.location.assign(webUrl === CLAUDE_NEW_CHAT_URL ? CLAUDE_APP_URL : webUrl);
         } catch (error) {
           // コピー済みの内容は保持し、ダイアログの直接リンクを使える状態にする。
         }
