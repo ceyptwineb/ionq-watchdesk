@@ -392,7 +392,7 @@ test("スマホでも投稿済み操作を表示し、速報の週間まとめ�
   assert.match(html, /const CLAUDE_REPORT_URL = "https:\/\/claude\.ai\/new";/);
   assert.match(html, /const CLAUDE_APP_URL = "claude:\/\/";/);
   assert.match(html, /function createWeeklyDigest[\s\S]*copyAndOpenClaude\(text, CLAUDE_WEEKLY_URL\)/);
-  assert.match(html, /function copyAndOpenGpts[\s\S]*copyAndOpenClaude\(url, CLAUDE_REPORT_URL\)/);
+  assert.match(html, /function copyAndOpenGpts[\s\S]*copyAndOpenClaude\(buildGptsText\(item\), CLAUDE_REPORT_URL\)/);
   assert.doesNotMatch(html, /chatgpt\.com|chatgpt:\/\/|CHATGPT_/);
   assert.match(html, /スレッドには分割しないでください/);
   assert.match(html, /投稿済みの記事も振り返り対象に含みます/);

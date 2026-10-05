@@ -521,7 +521,7 @@
           <textarea id="gptsText" readonly>左のニュースを選択してください。</textarea>
           <div class="row">
             <button id="copyGpts" class="primary">記事をコピー</button>
-            <button id="openGpts">URLをコピーしてClaudeを開く</button>
+            <button id="openGpts">記事をコピーしてClaudeを開く</button>
             <button id="copyUrl">URLだけコピー</button>
             <button id="openUrl">元記事を開く</button>
             <button id="blockSource" class="ghost">この媒体は読めなかった</button>
@@ -1022,7 +1022,7 @@
         "</div>",
         "<div class=\"item-actions\">",
         "<label class=\"posted\"><input type=\"checkbox\" " + (done ? "checked" : "") + ">投稿済み</label>",
-        "<div class=\"row\"><button type=\"button\" data-act=\"open-gpts\" class=\"primary\">URLをコピーしてClaudeを開く</button><button type=\"button\" data-act=\"select\">詳細</button></div>",
+        "<div class=\"row\"><button type=\"button\" data-act=\"open-gpts\" class=\"primary\">記事をコピーしてClaudeを開く</button><button type=\"button\" data-act=\"select\">詳細</button></div>",
         "</div>"
       ].join("");
 
@@ -1242,8 +1242,8 @@
     async function copyAndOpenGpts() {
       const item = selectedItem();
       if (!item) return;
-      const url = preferredReadableItem(item).url || "";
-      await copyAndOpenClaude(url, CLAUDE_REPORT_URL);
+      // Googleニュースの転送URLはAIが開けないため、title/source付きで渡す。
+      await copyAndOpenClaude(buildGptsText(item), CLAUDE_REPORT_URL);
     }
     async function copySelectedUrl() {
       const item = selectedItem();
